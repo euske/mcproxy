@@ -3,6 +3,8 @@
 ##  Minecraft Chatlog Proxy by Yusuke Shinyama
 ##  * this program is in public domain *
 ##
+##  Supported version: 1.8 beta
+##
 ##  usage: $ python mcproxy.py mcserver.example.com
 ##
 

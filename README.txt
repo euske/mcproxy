@@ -17,6 +17,11 @@ connect to localhost as if it was a real server and play it normally.
 Every chat text will be automatically saved onto the current directory.
 
 
+Current supported version:
+
+1.8 beta
+
+
 How to use:
 
 You need Python 2.6 or later (Python 3.0 is *not* supported!)  and
@@ -31,7 +36,8 @@ On Windows:
   > python mcproxy.py minecraftserver.example.com:25565
 
 Note that you need to pass the address and port of the real server
-you're connecting to.
+you're connecting to. Then launch a Minecraft client and connect to
+localhost.
 
 
 Credits:
