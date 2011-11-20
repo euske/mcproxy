@@ -3,7 +3,7 @@
 ##  Minecraft Chatlog Proxy by Yusuke Shinyama
 ##  * this program is in public domain *
 ##
-##  Supported version: 1.8 beta
+##  Supported version: 1.0 (as of Nov.19/2011)
 ##
 ##  usage: $ python mcproxy.py mcserver.example.com
 ##
@@ -25,11 +25,14 @@ def dist((x0,y0,z0),(x1,y1,z1)):
 
 
 ##  MCParser
-##  (for Beta protocol. cf. http://mc.kev009.com/Protocol)
+##  (for Protocol. cf. http://mc.kev009.com/wiki/index.php?title=Protocol&oldid=1509)
 ##
 class MCParser(object):
 
     debugfp = None
+
+    class MCParserError(Exception): pass
+    class ProtocolError(MCParserError): pass
     
     def __init__(self):
         self._stack = [(self._main,None)]
@@ -41,11 +44,15 @@ class MCParser(object):
         if self.debugfp is not None:
             print >>self.debugfp, 'feed: %r: %r' % (self._pos, self._stack)
             self.debugfp.flush()
-        while i < len(data):
-            (parse,arg) = self._stack[-1]
-            if parse(data[i], arg):
-                i += 1
-        self._pos += len(data)
+        try:
+            while i < len(data):
+                (parse,arg) = self._stack[-1]
+                if parse(data[i], arg):
+                    i += 1
+            self._pos += len(data)
+        except self.ProtocolError, e:
+            print >>self.debugfp, 'protocol error: %r: %r' % (self._pos+i, e)
+            raise
         return
 
     def _push(self, func, arg=None):
@@ -68,7 +75,7 @@ class MCParser(object):
             self._pop()
             return False
         else:
-            assert 0
+            raise self.ProtocolError('invalid bytes: %r' % arg[0])
     
     def _str8(self, c, arg):
         arg[0] += c
@@ -121,14 +128,6 @@ class MCParser(object):
             self._player_pos(x,y,z)
         return True
         
-    def _special_0f(self, c, arg):
-        arg[0] += c
-        if len(arg[0]) == 2:
-            self._pop()
-            if 0 <= toshort(arg[0]):
-                self._push(self._bytes, 3)
-        return True
-    
     def _special_17(self, c, arg):
         arg[0] += c
         if len(arg[0]) == 4:
@@ -169,14 +168,6 @@ class MCParser(object):
             self._push(self._bytes, n*3)
         return True
 
-    def _special_66(self, c, arg):
-        arg[0] += c
-        if len(arg[0]) == 2:
-            self._pop()
-            if toshort(arg[0]) != -1:
-                self._push(self._bytes, 3)
-        return True
-
     def _special_68(self, c, arg):
         arg[0] += c
         if len(arg[0]) == 2:
@@ -186,23 +177,57 @@ class MCParser(object):
     def _special_68_2(self, c, arg):
         if arg[0]:
             arg[0] -= 1
-            self._push(self._special_68_3)
+            self._push(self._slotdata)
         else:
             self._pop()
         return False
-    def _special_68_3(self, c, arg):
-        arg[0] += c
-        if len(arg[0]) == 2:
-            self._pop()
-            if toshort(arg[0]) != -1:
-                self._push(self._bytes, 3)
-        return True
 
     def _special_83(self, c, arg):
         self._pop()
         self._push(self._bytes, ord(c))
         return True
 
+    ENCHANTABLE_ITEMS = set([
+        0x103, #Flint and steel
+        0x105, #Bow
+        0x15A, #Fishing rod
+        0x167, #Shears
+
+        #TOOLS
+        #sword, shovel, pickaxe, axe, hoe
+        0x10C, 0x10D, 0x10E, 0x10F, 0x122, #WOOD
+        0x110, 0x111, 0x112, 0x113, 0x123, #STONE
+        0x10B, 0x100, 0x101, 0x102, 0x124, #IRON
+        0x114, 0x115, 0x116, 0x117, 0x125, #DIAMOND
+        0x11B, 0x11C, 0x11D, 0x11E, 0x126, #GOLD
+        
+        #ARMOUR
+        #helmet, chestplate, leggings, boots
+        0x12A, 0x12B, 0x12C, 0x12D, #LEATHER
+        0x12E, 0x12F, 0x130, 0x131, #CHAIN
+        0x132, 0x133, 0x134, 0x135, #IRON
+        0x136, 0x137, 0x138, 0x139, #DIAMOND
+        0x13A, 0x13B, 0x13C, 0x14D  #GOLD
+        ])
+    def _slotdata(self, c, arg):
+        arg[0] += c
+        if len(arg[0]) == 2:
+            self._pop()
+            bid = toshort(arg[0])
+            if 0 <= bid:
+                if bid in self.ENCHANTABLE_ITEMS:
+                    self._push(self._slotdata_extra)
+                self._push(self._bytes, 3)
+        return True
+    def _slotdata_extra(self, c, arg):
+        arg[0] += c
+        if len(arg[0]) == 2:
+            self._pop()
+            n = toshort(arg[0])
+            if 0 < n:
+                self._push(self._bytes, n)
+        return True
+    
     def _metadata(self, c, arg):
         c = ord(c)
         if c == 0x7f:
@@ -224,7 +249,7 @@ class MCParser(object):
             elif x == 6:
                 self._push(self._bytes, 12)
             else:
-                assert 0
+                raise self.ProtocolError('invalid metadata: %r' % c)
         return True
         
     def _main(self, c, arg):
@@ -264,7 +289,7 @@ class MCParser(object):
         elif c == 0x0e:
             self._push(self._bytes, 11)
         elif c == 0x0f:
-            self._push(self._special_0f)
+            self._push(self._slotdata)
             self._push(self._bytes, 10)
         elif c == 0x10:
             self._push(self._bytes, 2)
@@ -322,7 +347,7 @@ class MCParser(object):
         elif c == 0x2a:
             self._push(self._bytes, 5)
         elif c == 0x2b:
-            self._push(self._bytes, 4)
+            self._push(self._bytes, 8)
         elif c == 0x32:
             self._push(self._bytes, 9)
         elif c == 0x33:
@@ -350,10 +375,10 @@ class MCParser(object):
         elif c == 0x65:
             self._push(self._bytes, 1)
         elif c == 0x66:
-            self._push(self._special_66)
+            self._push(self._slotdata)
             self._push(self._bytes, 7)
         elif c == 0x67:
-            self._push(self._special_66)
+            self._push(self._slotdata)
             self._push(self._bytes, 3)
         elif c == 0x68:
             self._push(self._special_68)
@@ -363,7 +388,10 @@ class MCParser(object):
         elif c == 0x6a:
             self._push(self._bytes, 4)
         elif c == 0x6b:
-            self._push(self._bytes, 8)
+            self._push(self._slotdata)
+            self._push(self._bytes, 2)
+        elif c == 0x6c:
+            self._push(self._bytes, 2)
         elif c == 0x82:
             self._push(self._str16)
             self._push(self._str16)
@@ -383,7 +411,7 @@ class MCParser(object):
         elif c == 0xff:
             self._push(self._str16)
         else:
-            assert 0
+            raise self.ProtocolError('invalid packet: %r' % c)
         return True
     
 
@@ -491,7 +519,7 @@ class Server(asyncore.dispatcher):
         print >>sys.stderr, "output:", path
         chatlogger = MCChatLogger(fp)
         poslogger = MCPosLogger(fp)
-        proxy = Proxy(conn, self.session, poslogger, chatlogger)
+        proxy = Proxy(conn, self.session, [poslogger], [chatlogger])
         proxy.connect_remote(self.destaddr)
         self.session += 1
         return
@@ -517,10 +545,12 @@ class Proxy(asyncore.dispatcher):
 
     # overridable methods
     def local2remote(self, s):
-        self.plocal2remote.feed(s)
+        for proc in self.plocal2remote:
+            proc.feed(s)
         return s
     def remote2local(self, s):
-        self.premote2local.feed(s)
+        for proc in self.premote2local:
+            proc.feed(s)
         return s
 
     def connect_remote(self, addr):
@@ -646,7 +676,7 @@ def main(argv):
         elif k == '-p': listen = int(v)
         elif k == '-t': testfile = file(v, 'rb')
     if testfile is not None:
-        MCParser.debugfp = sys.stdout
+        MCParser.debugfp = sys.stderr
         parser = MCChatLogger(sys.stdout)
         while 1:
             data = testfile.read(4096)
