@@ -34,16 +34,19 @@ class MCParser(object):
     class MCParserError(Exception): pass
     class ProtocolError(MCParserError): pass
     
-    def __init__(self):
+    def __init__(self, safemode=False):
+        self.safemode = safemode
         self._stack = [(self._main,None)]
         self._pos = 0
+        self._active = True
         return
 
     def feed(self, data):
-        i = 0
         if self.debugfp is not None:
             print >>self.debugfp, 'feed: %r: %r' % (self._pos, self._stack)
             self.debugfp.flush()
+        if not self._active: return
+        i = 0
         try:
             while i < len(data):
                 (parse,arg) = self._stack[-1]
@@ -52,7 +55,10 @@ class MCParser(object):
             self._pos += len(data)
         except self.ProtocolError, e:
             print >>self.debugfp, 'protocol error: %r: %r' % (self._pos+i, e)
-            raise
+            if self.safemode:
+                self._active = False
+            else:
+                raise
         return
 
     def _push(self, func, arg=None):
@@ -419,8 +425,8 @@ class MCParser(object):
 ##
 class MCChatLogger(MCParser):
 
-    def __init__(self, fp):
-        MCParser.__init__(self)
+    def __init__(self, fp, safemode=True):
+        MCParser.__init__(self, safemode=safemode)
         self.fp = fp
         if 0:
             import gdbm
@@ -471,8 +477,8 @@ class MCPosLogger(MCParser):
 
     INTERVAL = 60
 
-    def __init__(self, fp):
-        MCParser.__init__(self)
+    def __init__(self, fp, safemode=True):
+        MCParser.__init__(self, safemode=safemode)
         self.fp = fp
         self._t = -1
         self._p = None
