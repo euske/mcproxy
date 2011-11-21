@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 ##
-##  Minecraft Chatlog Proxy by Yusuke Shinyama
+##  Minecraft Logger Proxy by Yusuke Shinyama
 ##  * this program is in public domain *
 ##
 ##  Supported version: Minecraft 1.0 / Protocol version 22 (2011/11/21)
@@ -117,6 +117,10 @@ class MCParser(object):
 
     def _player_pos(self, x, y, z):
         #print 'pos', (x,y,z)
+        return
+    
+    def _player_health(self, hp, food, sat):
+        #print 'health', (hp,food,sat)
         return
     
     def _mob_spawn(self, eid, t, x, y, z):
@@ -341,7 +345,7 @@ class MCParser(object):
         elif c == 0x07:
             self._push(self._bytes, 9)
         elif c == 0x08:
-            self._push(self._bytes, 8)
+            self._push(self._special_08)
         elif c == 0x09:
             self._push(self._bytes, 13)
         elif c == 0x0a:
@@ -481,48 +485,43 @@ class MCParser(object):
         return True
     
 
-##  MCChatLogger
+##  MCServerLogger
 ##
-class MCChatLogger(MCParser):
+class MCServerLogger(MCParser):
 
     def __init__(self, fp, safemode=True):
         MCParser.__init__(self, safemode=safemode)
         self.fp = fp
-        if 0:
-            import gdbm
-            self.db = gdbm.open('chunks.db', 'c')
+        self._t = -1
         return
     
     def _write(self, s):
-        s = re.sub(ur'\xa7.', '', s)
         line = time.strftime('%Y-%m-%d %H:%M:%S')+' '+s.encode('utf-8')
         self.fp.write(line+'\n')
         self.fp.flush()
         print line
         return
 
-    def _chat(self, s):
+    def _chat_text(self, s):
+        s = re.sub(ur'\xa7.', '', s)
         self._write(s)
         return
-    def _map_chunk_0(self, (x,y,z), (sx,sy,sz), nbytes):
-        key = '%d.%d.%d' % (x,y,z)
-        self._push(self._map_dump, [nbytes,key,''])
-        return
-    def _map_dump(self, c, arg):
-        arg[2] += c
-        if 0 < arg[0]:
-            arg[0] -= 1
-            return True
-        else:
-            (_,key,value) = arg
-            self.db[key] = value
-            self._pop()
-            return False
-        
 
-##  MCPosLogger
+    def _time_update(self, t):
+        t /= 1000
+        if self._t != t:
+            self._t = t
+            self._write(' --- %d days %d hrs ---' % (t/24, t%24))
+        return
+
+    def _player_health(self, hp, food, sat):
+        self._write(' +++ hp=%d, food=%d, sat=%.1f +++' % (hp, food, sat))
+        return
+    
+
+##  MCClientLogger
 ##
-class MCPosLogger(MCParser):
+class MCClientLogger(MCParser):
 
     INTERVAL = 60
 
@@ -538,6 +537,11 @@ class MCPosLogger(MCParser):
         self.fp.write(line+'\n')
         self.fp.flush()
         print line
+        return
+
+    def _chat_text(self, s):
+        s = re.sub(ur'\xa7.', '', s)
+        self._write('>> '+s)
         return
 
     def _player_pos(self, x, y, z):
@@ -572,9 +576,9 @@ class Server(asyncore.dispatcher):
         path = time.strftime(self.output)
         fp = file(path, 'a')
         print >>sys.stderr, "output:", path
-        chatlogger = MCChatLogger(fp)
-        poslogger = MCPosLogger(fp)
-        proxy = Proxy(conn, self.session, [poslogger], [chatlogger])
+        serverlogger = MCServerLogger(fp)
+        clientlogger = MCClientLogger(fp)
+        proxy = Proxy(conn, self.session, [clientlogger], [serverlogger])
         proxy.connect_remote(self.destaddr)
         self.session += 1
         return
@@ -722,7 +726,7 @@ def main(argv):
     except getopt.GetoptError:
         return usage()
     debug = 0
-    output = 'chatlog-%Y%m%d.txt'
+    output = 'mclog-%Y%m%d.txt'
     listen = 25565
     testfile = None
     for (k, v) in opts:
@@ -732,7 +736,8 @@ def main(argv):
         elif k == '-t': testfile = file(v, 'rb')
     if testfile is not None:
         MCParser.debugfp = sys.stderr
-        parser = MCChatLogger(sys.stdout)
+        parser = MCServerLogger(sys.stdout)
+        #parser = MCClientLogger(sys.stdout)
         while 1:
             data = testfile.read(4096)
             if not data: break
@@ -749,8 +754,8 @@ def main(argv):
         port = 25565
     if debug:
         MCParser.debugfp = file('parser.log', 'w')
-        Proxy.local2remotefp = file('local.log', 'wb')
-        Proxy.remote2localfp = file('remote.log', 'wb')
+        Proxy.local2remotefp = file('client.log', 'wb')
+        Proxy.remote2localfp = file('server.log', 'wb')
     Server(listen, (hostname, port), output)
     asyncore.loop()
     return
