@@ -3,7 +3,7 @@
 ##  Minecraft Chatlog Proxy by Yusuke Shinyama
 ##  * this program is in public domain *
 ##
-##  Supported version: 1.0 (as of Nov.19/2011)
+##  Supported version: Minecraft 1.0 / Protocol version 22 (2011/11/21)
 ##
 ##  usage: $ python mcproxy.py mcserver.example.com
 ##
@@ -20,12 +20,14 @@ def toshort(x):
     return unpack('>h', x)[0]
 def toint(x):
     return unpack('>i', x)[0]
+def tolong(x):
+    return unpack('>q', x)[0]
 def dist((x0,y0,z0),(x1,y1,z1)):
     return abs(x0-x1)+abs(y0-y1)+abs(z0-z1)
 
 
 ##  MCParser
-##  (for Protocol. cf. http://mc.kev009.com/wiki/index.php?title=Protocol&oldid=1509)
+##  (for Protocol. cf. http://mc.kev009.com/wiki/index.php?title=Protocol&oldid=1510)
 ##
 class MCParser(object):
 
@@ -97,27 +99,85 @@ class MCParser(object):
             self._push(self._bytes, toshort(arg[0])*2)
         return True
 
-    def _chat(self, nbytes):
-        self._push(self._bytes, nbytes)
+    def _protocol_version(self, version):
+        #print 'version', version
+        return
+
+    def _server_info(self, seed, mode, dim, diff, height, nplayers):
+        #print 'info', (seed, mode, dim, diff, height, nplayers)
+        return
+
+    def _chat_text(self, s):
+        #print 'text', repr(s)
+        return
+
+    def _time_update(self, t):
+        #print 'time', t
         return
 
     def _player_pos(self, x, y, z):
+        #print 'pos', (x,y,z)
         return
     
     def _mob_spawn(self, eid, t, x, y, z):
+        #print 'mob', (eid,t,x,y,z)
         return
 
     def _map_chunk(self, (x,y,z), (sx,sy,sz), nbytes):
         self._push(self._bytes, nbytes)
         return
         
+    def _special_01(self, c, arg):
+        arg[0] += c
+        if len(arg[0]) == 4:
+            self._pop()
+            self._protocol_version(toint(arg[0]))
+        return True
+    def _special_01_2(self, c, arg):
+        arg[0] += c
+        if len(arg[0]) == 16:
+            self._pop()
+            (seed,mode,dim,diff,height,nplayers) = unpack('>qibbBB', arg[0])
+            self._server_info(seed, mode, dim, diff, height, nplayers)
+        return True
+    
     def _special_03(self, c, arg):
         arg[0] += c
         if len(arg[0]) == 2:
             self._pop()
-            self._chat(toshort(arg[0])*2)
+            self._push(self._special_03_2, ['', toshort(arg[0])*2])
         return True
-    
+    def _special_03_2(self, c, arg):
+        arg[0] += c
+        arg[1] -= 1
+        if arg[1] == 0:
+            self._pop()
+            self._chat_text(arg[0].decode('utf-16be'))
+        return True
+        
+    def _special_04(self, c, arg):
+        arg[0] += c
+        if len(arg[0]) == 8:
+            self._pop()
+            self._time_update(tolong(arg[0]))
+        return True
+        
+    def _special_06(self, c, arg):
+        arg[0] += c
+        if len(arg[0]) == 12:
+            self._pop()
+            (x,y,z) = unpack('>iii', arg[0])
+            self._player_pos(x,y,z)
+        return True
+        
+    def _special_08(self, c, arg):
+        arg[0] += c
+        if len(arg[0]) == 8:
+            self._pop()
+            (hp,food,sat) = unpack('>hhf', arg[0])
+            self._player_health(hp, food, sat)
+        return True
+        
     def _special_0b(self, c, arg):
         arg[0] += c
         if len(arg[0]) == 33:
@@ -265,19 +325,19 @@ class MCParser(object):
         if c == 0x00:
             self._push(self._bytes, 4)
         elif c == 0x01:
-            self._push(self._bytes, 16)
+            self._push(self._special_01_2)
             self._push(self._str16)
-            self._push(self._bytes, 4)
+            self._push(self._special_01)
         elif c == 0x02:
             self._push(self._str16)
         elif c == 0x03:
             self._push(self._special_03)
         elif c == 0x04:
-            self._push(self._bytes, 8)
+            self._push(self._special_04)
         elif c == 0x05:
             self._push(self._bytes, 10)
         elif c == 0x06:
-            self._push(self._bytes, 12)
+            self._push(self._special_06)
         elif c == 0x07:
             self._push(self._bytes, 9)
         elif c == 0x08:
@@ -441,20 +501,9 @@ class MCChatLogger(MCParser):
         print line
         return
 
-    def _chat(self, nbytes):
-        self._push(self._chat_dump, [nbytes, ''])
+    def _chat(self, s):
+        self._write(s)
         return
-    def _chat_dump(self, c, arg):
-        if arg[0]:
-            arg[0] -= 1
-            arg[1] += c
-            return True
-        else:
-            s = arg[1].decode('utf-16be')
-            self._write(s)
-            self._pop()
-            return False
-    
     def _map_chunk_0(self, (x,y,z), (sx,sy,sz), nbytes):
         key = '%d.%d.%d' % (x,y,z)
         self._push(self._map_dump, [nbytes,key,''])
