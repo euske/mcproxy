@@ -485,16 +485,15 @@ class MCParser(object):
         return True
     
 
-##  MCServerLogger
+##  MCLogger
 ##
-class MCServerLogger(MCParser):
-
-    def __init__(self, fp, safemode=True):
+class MCLogger(MCParser):
+    
+    def __init__(self, fp, safemode=False):
         MCParser.__init__(self, safemode=safemode)
         self.fp = fp
-        self._t = -1
         return
-    
+
     def _write(self, s):
         line = time.strftime('%Y-%m-%d %H:%M:%S')+' '+s.encode('utf-8')
         self.fp.write(line+'\n')
@@ -502,41 +501,48 @@ class MCServerLogger(MCParser):
         print line
         return
 
+
+##  MCServerLogger
+##
+class MCServerLogger(MCLogger):
+
+    def __init__(self, fp, safemode=True):
+        MCLogger.__init__(self, fp, safemode=safemode)
+        self._h = -1
+        return
+    
     def _chat_text(self, s):
         s = re.sub(ur'\xa7.', '', s)
         self._write(s)
         return
 
     def _time_update(self, t):
-        t /= 1000
-        if self._t != t:
-            self._t = t
-            self._write(' --- %d days %d hrs ---' % (t/24, t%24))
+        (d,x) = divmod(t, 24000)
+        h = x/1000
+        if self._h != h:
+            self._h = h
+            self._write(' === day %d, %d:00' % (d, (h+8)%24))
         return
 
+    def _player_pos(self, x, y, z):
+        self._write(' *** (%d, %d, %d)' % (int(x), int(y), int(z)))
+        return
+    
     def _player_health(self, hp, food, sat):
-        self._write(' +++ hp=%d, food=%d, sat=%.1f +++' % (hp, food, sat))
+        self._write(' +++ hp=%d, food=%d, sat=%.1f' % (hp, food, sat))
         return
     
 
 ##  MCClientLogger
 ##
-class MCClientLogger(MCParser):
+class MCClientLogger(MCLogger):
 
     INTERVAL = 60
 
     def __init__(self, fp, safemode=True):
-        MCParser.__init__(self, safemode=safemode)
-        self.fp = fp
+        MCLogger.__init__(self, fp, safemode=safemode)
         self._t = -1
         self._p = None
-        return
-    
-    def _write(self, s):
-        line = time.strftime('%Y-%m-%d %H:%M:%S')+' '+s.encode('utf-8')
-        self.fp.write(line+'\n')
-        self.fp.flush()
-        print line
         return
 
     def _chat_text(self, s):
