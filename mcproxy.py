@@ -506,7 +506,7 @@ class MCLogger(MCParser):
 ##
 class MCServerLogger(MCLogger):
 
-    def __init__(self, fp, safemode=True):
+    def __init__(self, fp, safemode=False):
         MCLogger.__init__(self, fp, safemode=safemode)
         self._h = -1
         return
@@ -539,7 +539,7 @@ class MCClientLogger(MCLogger):
 
     INTERVAL = 60
 
-    def __init__(self, fp, safemode=True):
+    def __init__(self, fp, safemode=False):
         MCLogger.__init__(self, fp, safemode=safemode)
         self._t = -1
         self._p = None
@@ -582,8 +582,8 @@ class Server(asyncore.dispatcher):
         path = time.strftime(self.output)
         fp = file(path, 'a')
         print >>sys.stderr, "output:", path
-        serverlogger = MCServerLogger(fp)
-        clientlogger = MCClientLogger(fp)
+        serverlogger = MCServerLogger(fp, safemode=True)
+        clientlogger = MCClientLogger(fp, safemode=True)
         proxy = Proxy(conn, self.session, [clientlogger], [serverlogger])
         proxy.connect_remote(self.destaddr)
         self.session += 1
