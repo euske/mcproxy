@@ -4,16 +4,15 @@ by Yusuke Shinyama <yusuke at cs dot nyu dot edu>
 
 What is it?
 
-This small Python script is a Minecraft proxy server. A proxy server
-sits in between a client and a real server and relays the
+This small Python script is a Minecraft proxy server. The primary
+purpose of this program is to save the chat log and other various
+activities (such as player position, player health and time). A proxy
+server sits in between a client and a real server and relays the
 communication for both direction. Since a proxy server acts just as a
 normal Minecraft server, there's no client or server-side modification
 needed.  The client can simply connect to the proxy server as if it
 was a real server. The information through the proxy can be captured
-and recorded on a disk. The primary purpose of this program is to save
-the chat log and other various activities (such as player position,
-player health and time). Every chat text will be saved onto the
-current directory.
+and recorded on a disk.
 
 
 Current supported version:
@@ -36,7 +35,8 @@ On Windows:
 
 Note that you need to pass the address and port of the real server
 you're connecting to. Then launch a Minecraft client and connect to
-the localhost (127.0.0.1).
+the localhost (127.0.0.1).  A text file is automatically created in
+the current directory and a user's activity is saved.
 
 
 Credits:
