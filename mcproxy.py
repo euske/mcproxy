@@ -128,6 +128,7 @@ class MCParser(object):
         return
 
     def _map_chunk(self, (x,y,z), (sx,sy,sz), nbytes):
+        #print 'map', (x,y,z), (sx,sy,sz), nbytes
         self._push(self._bytes, nbytes)
         return
         
@@ -560,36 +561,6 @@ class MCClientLogger(MCLogger):
         return
 
 
-##  Server
-##
-class Server(asyncore.dispatcher):
-
-    def __init__(self, port, destaddr, output, bindaddr="127.0.0.1"):
-        asyncore.dispatcher.__init__(self)
-        self.output = output
-        self.destaddr = destaddr
-        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.set_reuse_addr()
-        self.bind((bindaddr, port))
-        self.listen(1)
-        self.session = 0
-        print >>sys.stderr, "Listening: %s:%d" % (bindaddr, port)
-        return
-
-    def handle_accept(self):
-        (conn, (addr,port)) = self.accept()
-        print >>sys.stderr, "Accepted:", addr
-        path = time.strftime(self.output)
-        fp = file(path, 'a')
-        print >>sys.stderr, "output:", path
-        serverlogger = MCServerLogger(fp, safemode=True)
-        clientlogger = MCClientLogger(fp, safemode=True)
-        proxy = Proxy(conn, self.session, [clientlogger], [serverlogger])
-        proxy.connect_remote(self.destaddr)
-        self.session += 1
-        return
-
-
 ##  Proxy
 ##
 class Proxy(asyncore.dispatcher):
@@ -721,25 +692,75 @@ class Client(asyncore.dispatcher):
         self.sendbuffer = self.sendbuffer[n:]
         return
 
+
+##  Server
+##
+class Server(asyncore.dispatcher):
+
+    def __init__(self, port, destaddr, bindaddr="127.0.0.1"):
+        asyncore.dispatcher.__init__(self)
+        self.destaddr = destaddr
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.set_reuse_addr()
+        self.bind((bindaddr, port))
+        self.listen(1)
+        self.session = 0
+        print >>sys.stderr, "Listening: %s:%d" % (bindaddr, port)
+        return
+
+    def handle_accept(self):
+        (conn, (addr,port)) = self.accept()
+        print >>sys.stderr, "Accepted:", addr
+        (clientloggers, serverloggers) = self.create_proxy(conn, self.session)
+        proxy = Proxy(conn, self.session, clientloggers, serverloggers)
+        proxy.connect_remote(self.destaddr)
+        self.session += 1
+        return
+
+    def create_proxy(self, conn, session):
+        return ([], [])
+
+
+##  MCProxyServer
+##
+class MCProxyServer(Server):
+    
+    def __init__(self, port, destaddr, output, safemode=True, bindaddr="127.0.0.1"):
+        Server.__init__(self, port, destaddr, bindaddr=bindaddr)
+        self.output = output
+        self.safemode = safemode
+        return
+
+    def create_proxy(self, conn, session):
+        path = time.strftime(self.output)
+        fp = file(path, 'a')
+        print >>sys.stderr, "output:", path
+        serverlogger = MCServerLogger(fp, safemode=self.safemode)
+        clientlogger = MCClientLogger(fp, safemode=self.safemode)
+        return ([serverlogger], [clientlogger])
+    
+    
 # main
 def main(argv):
     import getopt
     def usage():
-        print 'usage: %s [-d] [-o output] [-p port] [-t testfile] hostname:port' % argv[0]
+        print 'usage: %s [-d] [-o output] [-p port] [-t testfile] [-S] hostname:port' % argv[0]
         return 100
     try:
-        (opts, args) = getopt.getopt(argv[1:], 'do:p:t:')
+        (opts, args) = getopt.getopt(argv[1:], 'do:p:t:S')
     except getopt.GetoptError:
         return usage()
     debug = 0
     output = 'mclog-%Y%m%d.txt'
     listen = 25565
     testfile = None
+    safemode = True
     for (k, v) in opts:
         if k == '-d': debug += 1
         elif k == '-o': output = v
         elif k == '-p': listen = int(v)
         elif k == '-t': testfile = file(v, 'rb')
+        elif k == '-S': safemode = False
     if testfile is not None:
         MCParser.debugfp = sys.stderr
         parser = MCServerLogger(sys.stdout)
@@ -762,7 +783,7 @@ def main(argv):
         MCParser.debugfp = file('parser.log', 'w')
         Proxy.local2remotefp = file('client.log', 'wb')
         Proxy.remote2localfp = file('server.log', 'wb')
-    Server(listen, (hostname, port), output)
+    MCProxyServer(listen, (hostname, port), output, safemode=safemode)
     asyncore.loop()
     return
 
