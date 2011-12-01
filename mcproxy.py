@@ -507,9 +507,13 @@ class MCLogger(MCParser):
 ##
 class MCServerLogger(MCLogger):
 
+    INTERVAL = 60
+
     def __init__(self, fp, safemode=False):
         MCLogger.__init__(self, fp, safemode=safemode)
         self._h = -1
+        self._t = -1
+        self._p = None
         return
     
     def _chat_text(self, s):
@@ -526,7 +530,12 @@ class MCServerLogger(MCLogger):
         return
 
     def _player_pos(self, x, y, z):
-        self._write(' *** (%d, %d, %d)' % (int(x), int(y), int(z)))
+        t = int(time.time())
+        p = (int(x), int(y), int(z))
+        if t < self._t and (self._p is not None and dist(p, self._p) < 50): return
+        self._t = t + self.INTERVAL
+        self._p = p
+        self._write(' *** (%d, %d, %d)' % p)
         return
     
     def _player_health(self, hp, food, sat):
