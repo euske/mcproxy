@@ -8,7 +8,7 @@
 ##  usage: $ python mcproxy.py mcserver.example.com
 ##
 
-import sys, os.path
+import sys, os, os.path
 import re
 import time
 import socket
@@ -831,6 +831,11 @@ def main(argv):
         testfile.close()
         return
     if not args: return usage()
+    if map_chunk_path is not None:
+        try:
+            os.makedirs(map_chunk_path)
+        except OSError:
+            pass
     x = args.pop(0)
     if ':' in x:
         (hostname,port) = x.split(':')
