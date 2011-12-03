@@ -560,7 +560,7 @@ class MCServerLogger(MCLogger):
         self._chunk_data += c
         if arg[0] == 0:
             if self.map_chunk_path is not None:
-                path = os.path.join(self.map_chunk_path, 'r.%s.ext' % self._chunk_key)
+                path = os.path.join(self.map_chunk_path, 'r.%s.maplog' % self._chunk_key)
                 fp = file(path, 'ab')
                 fp.write(pack('>iiiiii', *self._chunk_info))
                 fp.write(pack('>i', len(self._chunk_data)))
