@@ -1,4 +1,4 @@
-Minecraft Chatlog Proxy
+Minecraft Logging Proxy
 by Yusuke Shinyama <yusuke at cs dot nyu dot edu>
 
 
