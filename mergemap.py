@@ -367,34 +367,31 @@ def main(argv):
         (opts, args) = getopt.getopt(argv[1:], 'i:o:')
     except getopt.GetoptError:
         return usage()
-    refdir = './region'
+    refdirs = []
     outdir = './region'
     for (k, v) in opts:
-        if k == '-i': refdir = v
+        if k == '-i': refdirs.append(v)
         elif k == '-o': outdir = v
-    try:
-        os.makedirs(refdir)
-    except OSError:
-        pass
-    try:
-        os.makedirs(outdir)
-    except OSError:
-        pass
     for extpath in args:
         name = os.path.basename(extpath).replace('.maplog', '')
         rgn = RegionFile(name)
-        refpath = os.path.join(refdir, name+'.mcr')
-        try:
-            fp = open(refpath, 'rb')
-            print >>sys.stderr, 'reading: %r' % refpath
-            rgn.loadref(fp)
-            fp.close()
-        except IOError:
-            pass
+        for refdir in refdirs:
+            refpath = os.path.join(refdir, name+'.mcr')
+            try:
+                fp = open(refpath, 'rb')
+                print >>sys.stderr, 'reading: %r' % refpath
+                rgn.loadref(fp)
+                fp.close()
+            except IOError:
+                pass
         fp = open(extpath, 'rb')
         print >>sys.stderr, 'merging: %r' % extpath
         rgn.loadext(fp)
         fp.close()
+        try:
+            os.makedirs(outdir)
+        except OSError:
+            pass
         outpath = os.path.join(outdir, name+'.mcr')
         try:
             os.rename(outpath, outpath+'.old')
