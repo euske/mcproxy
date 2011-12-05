@@ -7,7 +7,7 @@
 ##
 ##  caution: data other than map chunks (ie. signs, mob stats, etc.) are not changed!
 ##
-##  usage: python mergemap.py -i world/region -o world/region maplog/*.maplog
+##  usage: python mergemap.py -o world/region world/region/r.*.mcr maplog/r.*.maplog
 ##
 
 import sys, zlib, array, os, os.path
@@ -212,9 +212,9 @@ class RegionFile(object):
 
     class Chunk(object):
         
-        def __init__(self, key, timestamp=0):
+        def __init__(self, (cx,cy,cz), timestamp=0):
             n = 16*128*16
-            self.key = key
+            self.key = (cx,cy,cz)
             self.timestamp = timestamp
             self._blockids = array.array('c', '\x00'*n)
             self._blockdata = array.array('b', [0]*n)
@@ -225,10 +225,15 @@ class RegionFile(object):
                     (u'Data', NBTByteArray('')),
                     (u'SkyLight', NBTByteArray('')),
                     (u'BlockLight', NBTByteArray('')),
+                    (u'xPos', NBTInt(cx)),
+                    (u'zPos', NBTInt(cz)),
                     ])
             root = NBTCompound([(u'Level', level)])
             self._compound = NBTCompound([(u'', root)])
             return
+
+        def __repr__(self):
+            return '<Chunk %r>' % self.key
 
         def put(self, x0, y0, z0, sx, sy, sz, data):
             n = sx*sy*sz
@@ -290,12 +295,16 @@ class RegionFile(object):
             fp.write(data)
             return len(data)+5
     
-    def __init__(self, name):
-        self.name = name
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
         self._chunks = {}
         return
-    
-    def loadref(self, fp):
+
+    def __repr__(self):
+        return '<RegionFile %r,%r>' % (self.x, self.y)
+
+    def load_mcr(self, fp):
         offsets = []
         for _ in xrange(1024):
             (sector,size) = unpack('>ib', '\x00'+fp.read(4))
@@ -316,7 +325,7 @@ class RegionFile(object):
         sys.stderr.write('\n'); sys.stderr.flush()
         return
     
-    def loadext(self, fp):
+    def load_log(self, fp):
         while 1:
             buf = fp.read(28)
             if not buf: break
@@ -361,37 +370,58 @@ class RegionFile(object):
 def main(argv):
     import getopt
     def usage():
-        print 'usage: %s [-i refdir] [-o outdir] [file ...]' % argv[0]
+        print 'usage: %s [-o outdir] [file ...]' % argv[0]
         return 100
     try:
-        (opts, args) = getopt.getopt(argv[1:], 'i:o:')
+        (opts, args) = getopt.getopt(argv[1:], 'o:')
     except getopt.GetoptError:
         return usage()
-    refdirs = []
     outdir = './region'
+    force = False
     for (k, v) in opts:
-        if k == '-i': refdirs.append(v)
-        elif k == '-o': outdir = v
-    for extpath in args:
-        name = os.path.basename(extpath).replace('.maplog', '')
-        rgn = RegionFile(name)
-        for refdir in refdirs:
-            refpath = os.path.join(refdir, name+'.mcr')
+        if k == '-o': outdir = v
+        elif k == '-f': force = True
+    names = set()
+    mcrs = {}
+    maplogs = {}
+    for path in args:
+        (name,_) = os.path.splitext(os.path.basename(path))
+        if path.endswith('.mcr'):
+            if name not in mcrs: mcrs[name] = []
+            mcrs[name].append(path)
+            names.add(name)
+        elif path.endswith('.maplog'):
+            if name not in maplogs: maplogs[name] = []
+            maplogs[name].append(path)
+            names.add(name)
+        else:
+            raise ValueError('unknown file format: %r' % path)
+    try:
+        os.makedirs(outdir)
+    except OSError:
+        pass
+    for name in sorted(names):
+        if name not in maplogs and len(mcrs[name]) < 2:
+            # skip unchanged files.
+            if not force: continue
+        (_,x,y) = name.split('.')
+        rgn = RegionFile(int(x), int(y))
+        for path in mcrs.get(name, []):
             try:
-                fp = open(refpath, 'rb')
-                print >>sys.stderr, 'reading: %r' % refpath
-                rgn.loadref(fp)
+                fp = open(path, 'rb')
+                print >>sys.stderr, 'reading mcr: %r' % path
+                rgn.load_mcr(fp)
                 fp.close()
             except IOError:
                 pass
-        fp = open(extpath, 'rb')
-        print >>sys.stderr, 'merging: %r' % extpath
-        rgn.loadext(fp)
-        fp.close()
-        try:
-            os.makedirs(outdir)
-        except OSError:
-            pass
+        for path in maplogs.get(name, []):
+            try:
+                fp = open(path, 'rb')
+                print >>sys.stderr, 'reading maplog: %r' % path
+                rgn.load_log(fp)
+                fp.close()
+            except IOError:
+                pass
         outpath = os.path.join(outdir, name+'.mcr')
         try:
             os.rename(outpath, outpath+'.old')
