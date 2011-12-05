@@ -39,6 +39,10 @@ class NBTObject(object):
         return
     def __repr__(self):
         return '<%s %r>' % (self.__class__.__name__, self.value)
+    def pp(self, fp, indent=0):
+        fp.write(' '*indent)
+        fp.write('%s: %r\n' % (self.__class__.__name__, self.value))
+        return 
 
 class NBTByte(NBTObject):
     TAG = 1
@@ -74,6 +78,14 @@ class NBTByteArray(NBTObject):
     TAG = 7
     def tostring(self):
         return pack('>i', len(self.value))+self.value
+    LIMIT = 20
+    def pp(self, fp, indent=0):
+        fp.write(' '*indent)
+        if len(self.value) < self.LIMIT:
+            fp.write('%s: %r\n' % (self.__class__.__name__, self.value))
+        else:
+            fp.write('%s: %r...\n' % (self.__class__.__name__, self.value[:self.LIMIT]))
+        return 
 
 class NBTString(NBTObject):
     TAG = 8
@@ -90,6 +102,12 @@ class NBTList(NBTObject):
     def tostring(self):
         data = ''.join( obj.tostring() for obj in self.value )
         return pack('>bi', self.tag, len(self.value))+data
+    def pp(self, fp, indent=0):
+        fp.write(' '*indent+'[\n')
+        for obj in self.value:
+            obj.pp(fp, indent=indent+1)
+        fp.write(' '*indent+']\n')
+        return 
 
 class NBTCompound(NBTObject):
     TAG = 10
@@ -107,6 +125,13 @@ class NBTCompound(NBTObject):
         if not root:
             data += '\x00'
         return data
+    def pp(self, fp, indent=0):
+        fp.write(' '*indent+'{\n')
+        for (name,obj) in self.value:
+            fp.write(' '*indent+' %r:\n' % name)
+            obj.pp(fp, indent=indent+2)
+        fp.write(' '*indent+'}\n')
+        return 
 
 
 ##  NBTParser
@@ -304,7 +329,7 @@ class RegionFile(object):
     def __repr__(self):
         return '<RegionFile %r,%r>' % (self.x, self.y)
 
-    def load_mcr(self, fp):
+    def load_mcr_header(self, fp):
         offsets = []
         for _ in xrange(1024):
             (sector,size) = unpack('>ib', '\x00'+fp.read(4))
@@ -313,7 +338,10 @@ class RegionFile(object):
         for _ in xrange(1024):
             (timestamp,) = unpack('>i', fp.read(4))
             timestamps.append(timestamp)
-        for (i,((sector,size),timestamp)) in enumerate(zip(offsets,timestamps)):
+        return zip(offsets, timestamps)
+
+    def load_mcr(self, fp):
+        for (i,((sector,size),timestamp)) in enumerate(self.load_mcr_header(fp)):
             if size == 0: continue
             (cz,cx) = divmod(i, 32)
             chunk = self.Chunk((cx,0,cz), timestamp)
@@ -373,14 +401,14 @@ def main(argv):
         print 'usage: %s [-o outdir] [file ...]' % argv[0]
         return 100
     try:
-        (opts, args) = getopt.getopt(argv[1:], 'o:')
+        (opts, args) = getopt.getopt(argv[1:], 'fo:')
     except getopt.GetoptError:
         return usage()
-    outdir = './region'
     force = False
+    outdir = './region'
     for (k, v) in opts:
-        if k == '-o': outdir = v
-        elif k == '-f': force = True
+        if k == '-f': force = True
+        elif k == '-o': outdir = v
     names = set()
     mcrs = {}
     maplogs = {}
@@ -395,7 +423,7 @@ def main(argv):
             maplogs[name].append(path)
             names.add(name)
         else:
-            raise ValueError('unknown file format: %r' % path)
+            print >>sys.stderr, 'unknown file format: %r' % path
     try:
         os.makedirs(outdir)
     except OSError:
