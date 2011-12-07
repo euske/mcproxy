@@ -528,8 +528,13 @@ class MCServerLogger(MCLogger):
         self.rec_player_health = player_health
         self.map_chunk_path = map_chunk_path
         self._h = -1
+        self._dim = 0
         return
     
+    def _server_info(self, seed, mode, dim, diff, height):
+        self._dim = dim
+        return
+
     def _chat_text(self, s):
         if not self.rec_chat_text: return
         s = re.sub(ur'\xa7.', '', s)
@@ -567,7 +572,7 @@ class MCServerLogger(MCLogger):
         arg[0] -= 1
         self._chunk_data += c
         if arg[0] == 0:
-            if self.map_chunk_path is not None:
+            if self._dim == 0 and self.map_chunk_path is not None:
                 path = os.path.join(self.map_chunk_path, 'r.%s.maplog' % self._chunk_key)
                 fp = file(path, 'ab')
                 fp.write(pack('>iiiiii', *self._chunk_info))
