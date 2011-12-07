@@ -103,8 +103,8 @@ class MCParser(object):
         #print 'version', version
         return
 
-    def _server_info(self, seed, mode, dim, diff, height, nplayers):
-        #print 'info', (seed, mode, dim, diff, height, nplayers)
+    def _server_info(self, seed, mode, dim, diff, height):
+        #print 'info', (seed, mode, dim, diff, height)
         return
 
     def _chat_text(self, s):
@@ -143,7 +143,7 @@ class MCParser(object):
         if len(arg[0]) == 16:
             self._pop()
             (seed,mode,dim,diff,height,nplayers) = unpack('>qibbBB', arg[0])
-            self._server_info(seed, mode, dim, diff, height, nplayers)
+            self._server_info(seed, mode, dim, diff, height)
         return True
     
     def _special_03(self, c, arg):
@@ -183,6 +183,14 @@ class MCParser(object):
             self._player_health(hp, food, sat)
         return True
         
+    def _special_09(self, c, arg):
+        arg[0] += c
+        if len(arg[0]) == 13:
+            self._pop()
+            (dim,diff,mode,height,seed) = unpack('>bbbhq', arg[0])
+            self._server_info(seed, mode, dim, diff, height)
+        return True
+
     def _special_0b(self, c, arg):
         arg[0] += c
         if len(arg[0]) == 33:
@@ -348,7 +356,7 @@ class MCParser(object):
         elif c == 0x08:
             self._push(self._special_08)
         elif c == 0x09:
-            self._push(self._bytes, 13)
+            self._push(self._special_09)
         elif c == 0x0a:
             self._push(self._bytes, 1)
         elif c == 0x0b:
