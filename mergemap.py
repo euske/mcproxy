@@ -269,9 +269,6 @@ class RegionFile(object):
             skylight = nibs[n:n*2]
             blocklight = nibs[n*2:]
             assert len(blockids) == len(blockdata) == len(skylight) == len(blocklight)
-            assert 0 <= x0 and x0+sx <= 16
-            assert 0 <= y0 and y0+sy <= 128
-            assert 0 <= z0 and z0+sz <= 16
             if x0 == y0 == z0 == 0 and sx == sz == 16 and sy == 128:
                 self._blockids[:] = array.array('c', blockids)
                 self._blockdata[:] = array.array('b', blockdata)
@@ -280,10 +277,13 @@ class RegionFile(object):
             else:
                 j = 0
                 for x in xrange(x0, x0+sx):
+                    if x < 0 or 16 <= x: continue
                     i0 = x*16*128
                     for z in xrange(z0, z0+sz):
+                        if z < 0 or 16 <= z: continue
                         i1 = i0+z*128
                         for y in xrange(y0, y0+sy):
+                            if y < 0 or 128 <= y: continue
                             self._blockids[i1+y] = blockids[j]
                             self._blockdata[i1+y] = blockdata[j]
                             self._skylight[i1+y] = skylight[j]
