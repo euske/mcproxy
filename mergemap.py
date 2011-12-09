@@ -10,7 +10,7 @@
 ##  usage: python mergemap.py -o world/region world/region/r.*.mcr maplog/r.*.maplog
 ##
 
-import sys, zlib, array, os, os.path
+import sys, zlib, array, os, os.path, glob
 from cStringIO import StringIO
 from struct import pack, unpack
 
@@ -412,18 +412,19 @@ def main(argv):
     names = set()
     mcrs = {}
     maplogs = {}
-    for path in args:
-        (name,_) = os.path.splitext(os.path.basename(path))
-        if path.endswith('.mcr'):
-            if name not in mcrs: mcrs[name] = []
-            mcrs[name].append(path)
-            names.add(name)
-        elif path.endswith('.maplog'):
-            if name not in maplogs: maplogs[name] = []
-            maplogs[name].append(path)
-            names.add(name)
-        else:
-            print >>sys.stderr, 'unknown file format: %r' % path
+    for arg in args:
+        for path in glob.glob(arg):
+            (name,_) = os.path.splitext(os.path.basename(path))
+            if path.endswith('.mcr'):
+                if name not in mcrs: mcrs[name] = []
+                mcrs[name].append(path)
+                names.add(name)
+            elif path.endswith('.maplog'):
+                if name not in maplogs: maplogs[name] = []
+                maplogs[name].append(path)
+                names.add(name)
+            else:
+                print >>sys.stderr, 'unknown file format: %r' % path
     try:
         os.makedirs(outdir)
     except OSError:
