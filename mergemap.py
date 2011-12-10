@@ -10,7 +10,7 @@
 ##  usage: python mergemap.py -o world/region world/region/r.*.mcr maplog/r.*.maplog
 ##
 
-import sys, zlib, array, os, os.path, glob
+import sys, zlib, array, os, os.path, glob, zipfile
 from cStringIO import StringIO
 from struct import pack, unpack
 
@@ -336,15 +336,21 @@ class RegionFile(object):
         for _ in xrange(1024):
             (timestamp,) = unpack('>i', fp.read(4))
             timestamps.append(timestamp)
-        return zip(offsets, timestamps)
+        chunks = [ (i,sector,size,timestamp) for (i,((sector,size),timestamp))
+                   in enumerate(zip(offsets, timestamps)) ]
+        return chunks
 
     def load_mcr(self, fp):
-        for (i,((sector,size),timestamp)) in enumerate(self.load_mcr_header(fp)):
+        # read the chunks sequentially from the file.
+        chunks = self.load_mcr_header(fp)
+        chunks.sort(key=lambda (i,sector,size,timestamp): sector)
+        for (i,sector,size,timestamp) in chunks:
             if size == 0: continue
             (cz,cx) = divmod(i, 32)
             chunk = self.Chunk((cx,0,cz), timestamp)
             pos = sector * 4096
-            fp.seek(pos)
+            # seek
+            fp.read(pos-fp.tell())
             chunk.load(fp)
             sys.stderr.write('.'); sys.stderr.flush()
             self._chunks[chunk.key] = chunk
@@ -392,7 +398,134 @@ class RegionFile(object):
             fp.write(pack('>i', timestamp))
         sys.stderr.write('\n'); sys.stderr.flush()
         return
+
+
+##  RegionMerger
+##
+class RegionMerger(object):
+
+    def __init__(self, outdir):
+        self.outdir = outdir
+        self.names = set()
+        self.mcrs = {}
+        self.maplogs = {}
+        return
+
+    def add_container(self, path):
+        if path.endswith('.zip'):
+            zf = zipfile.ZipFile(path)
+            for zpath in zf.namelist():
+                if not zpath.endswith('/'):
+                    (name,_) = os.path.splitext(os.path.basename(zpath))
+                    loc = (path, zpath)
+                    self.add_file(name, zpath, container=path)
+            zf.close()
+        else:
+            (name,_) = os.path.splitext(os.path.basename(path))
+            self.add_file(name, path)
+        return
     
+    def add_file(self, name, path, container=None):
+        if path.endswith('.mcr'):
+            if name not in self.mcrs: self.mcrs[name] = []
+            self.mcrs[name].append((path, container))
+            self.names.add(name)
+        elif path.endswith('.maplog'):
+            if name not in self.maplogs: self.maplogs[name] = []
+            self.maplogs[name].append((path, container))
+            self.names.add(name)
+        else:
+            print >>sys.stderr, 'unknown file format: %r' % path
+        return
+    
+    def open_file(self, loc):
+        (path, container) = loc
+        try:
+            if container is not None:
+                zf = zipfile.ZipFile(container)
+                return (zf.open(path, 'r'), zf)
+            else:
+                return (open(path, 'rb'), None)
+        except (IOError, zipfile.BadZipfile), e:
+            print >>sys.stderr, 'cannot open: %r: %r' % (e, (path,container))
+            raise
+        
+    def close_file(self, fp, cp=None):
+        fp.close()
+        if cp is not None:
+            cp.close()
+        return
+
+    def copy_file(self, loc, dstpath):
+        (fp,cp) = self.open_file(loc)
+        outfp = open(dstpath, 'wb')
+        while 1:
+            data = fp.read(4096)
+            if not data: break
+            outfp.write(data)
+        outfp.close()
+        self.close_file(fp, cp)
+        return
+
+    def run(self, force=False):
+        try:
+            os.makedirs(self.outdir)
+        except OSError:
+            pass
+        for name in sorted(self.names):
+            mcrname = name+'.mcr'
+            outpath = os.path.join(self.outdir, mcrname)
+            mcrs = self.mcrs.get(name, [])
+            maplogs = self.maplogs.get(name, [])
+            print >>sys.stderr, '** chunk', name
+            print >>sys.stderr, 'files', mcrs+maplogs
+            if not maplogs and len(mcrs) == 1:
+                if os.path.isfile(outpath):
+                    # skip unchanged files.
+                    if not force: continue
+                else:
+                    # no merge is needed.
+                    loc = mcrs[0]
+                    try:
+                        print >>sys.stderr, 'copying: %r -> %r' % (loc, outpath)
+                        self.copy_file(loc, outpath)
+                    except (IOError, zipfile.BadZipfile):
+                        pass
+                    continue
+            # first merge .mcr files.
+            (_,x,y) = name.split('.')
+            rgn = RegionFile(int(x), int(y))
+            for loc in mcrs:
+                try:
+                    (fp,cp) = self.open_file(loc)
+                    print >>sys.stderr, 'reading mcr: %r' % (loc,)
+                    rgn.load_mcr(fp)
+                    self.close_file(fp, cp)
+                except (IOError, zipfile.BadZipfile):
+                    pass
+            # then merge .maplog files.
+            for loc in maplogs:
+                try:
+                    (fp,cp) = self.open_file(loc)
+                    print >>sys.stderr, 'reading maplog: %r' % (loc,)
+                    rgn.load_log(fp)
+                    self.close_file(fp, cp)
+                except (IOError, zipfile.BadZipfile):
+                    pass
+            # write the results.
+            try:
+                os.rename(outpath, outpath+'.old')
+                print >>sys.stderr, 'rename old: %r' % outpath
+            except OSError:
+                pass
+            print >>sys.stderr, 'writing: %r' % outpath
+            outfp = open(outpath, 'wb')
+            rgn.write(outfp)
+            outfp.close()
+            # print the file name.
+            print mcrname
+        return
+
 def main(argv):
     import getopt
     def usage():
@@ -407,60 +540,11 @@ def main(argv):
     for (k, v) in opts:
         if k == '-f': force = True
         elif k == '-o': outdir = v
-    names = set()
-    mcrs = {}
-    maplogs = {}
+    merger = RegionMerger(outdir)
     for arg in args:
         for path in glob.glob(arg):
-            (name,_) = os.path.splitext(os.path.basename(path))
-            if path.endswith('.mcr'):
-                if name not in mcrs: mcrs[name] = []
-                mcrs[name].append(path)
-                names.add(name)
-            elif path.endswith('.maplog'):
-                if name not in maplogs: maplogs[name] = []
-                maplogs[name].append(path)
-                names.add(name)
-            else:
-                print >>sys.stderr, 'unknown file format: %r' % path
-    try:
-        os.makedirs(outdir)
-    except OSError:
-        pass
-    for name in sorted(names):
-        mcrname = name+'.mcr'
-        outpath = os.path.join(outdir, mcrname)
-        if name not in maplogs and len(mcrs[name]) == 1 and os.path.isfile(outpath):
-            # skip unchanged files.
-            if not force: continue
-        (_,x,y) = name.split('.')
-        rgn = RegionFile(int(x), int(y))
-        for path in mcrs.get(name, []):
-            try:
-                fp = open(path, 'rb')
-                print >>sys.stderr, 'reading mcr: %r' % path
-                rgn.load_mcr(fp)
-                fp.close()
-            except IOError:
-                pass
-        for path in maplogs.get(name, []):
-            try:
-                fp = open(path, 'rb')
-                print >>sys.stderr, 'reading maplog: %r' % path
-                rgn.load_log(fp)
-                fp.close()
-            except IOError:
-                pass
-        try:
-            os.rename(outpath, outpath+'.old')
-            print >>sys.stderr, 'rename old: %r' % outpath
-        except OSError:
-            pass
-        print >>sys.stderr, 'writing: %r' % outpath
-        outfp = open(outpath, 'wb')
-        rgn.write(outfp)
-        outfp.close()
-        print mcrname
+            merger.add_container(path)
+    merger.run(force=force)
     return 0
 
 if __name__ == '__main__': sys.exit(main(sys.argv))
