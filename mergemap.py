@@ -290,7 +290,7 @@ class RegionFile(object):
 
         def load(self, fp):
             (nbytes,method) = unpack('>ib', fp.read(5))
-            data = fp.read(nbytes)
+            data = fp.read(nbytes-1)
             data = zlib.decompress(data)
             self._compound = NBTParser(data).get_root()
             root = self._compound.get(u'')
@@ -303,7 +303,7 @@ class RegionFile(object):
             self._blockdata[:] = array.array('b', blockdata)
             self._skylight[:] = array.array('b', skylight)
             self._blocklight[:] = array.array('b', blocklight)
-            return
+            return nbytes+4
 
         def write(self, fp):
             root = self._compound.get(u'')
@@ -348,8 +348,10 @@ class RegionFile(object):
             (cz,cx) = divmod(i, 32)
             chunk = self.Chunk((cx,0,cz), timestamp)
             pos = sector * 4096
-            # seek
-            fp.read(pos-fp.tell())
+            # fp.seek(pos)
+            skip = pos-fp.tell()
+            assert 0 <= skip
+            fp.read(skip)
             chunk.load(fp)
             sys.stderr.write('.'); sys.stderr.flush()
             self._chunks[chunk.key] = chunk
