@@ -263,32 +263,30 @@ class RegionFile(object):
         def put(self, x0, y0, z0, sx, sy, sz, data):
             n = sx*sy*sz
             assert len(data) == int(n*2.5), (len(data), sx,sy,sz)
-            blockids = data[:n]
+            blockids = array.array('c', data[:n])
             nibs = unpack4(data[n:])
-            blockdata = nibs[:n]
-            skylight = nibs[n:n*2]
-            blocklight = nibs[n*2:]
+            blockdata = array.array('b', nibs[:n])
+            skylight = array.array('b', nibs[n:n*2])
+            blocklight = array.array('b', nibs[n*2:])
             assert len(blockids) == len(blockdata) == len(skylight) == len(blocklight)
             if x0 == y0 == z0 == 0 and sx == sz == 16 and sy == 128:
-                self._blockids[:] = array.array('c', blockids)
-                self._blockdata[:] = array.array('b', blockdata)
-                self._skylight[:] = array.array('b', skylight)
-                self._blocklight[:] = array.array('b', blocklight)
+                self._blockids[:] = blockids
+                self._blockdata[:] = blockdata
+                self._skylight[:] = skylight
+                self._blocklight[:] = blocklight
             else:
-                j = 0
                 for x in xrange(x0, x0+sx):
                     if x < 0 or 16 <= x: continue
                     i0 = x*16*128
+                    j0 = x*sz*sy
                     for z in xrange(z0, z0+sz):
                         if z < 0 or 16 <= z: continue
-                        i1 = i0+z*128
-                        for y in xrange(y0, y0+sy):
-                            if y < 0 or 128 <= y: continue
-                            self._blockids[i1+y] = blockids[j]
-                            self._blockdata[i1+y] = blockdata[j]
-                            self._skylight[i1+y] = skylight[j]
-                            self._blocklight[i1+y] = blocklight[j]
-                            j += 1
+                        i1 = i0+z*128+y0
+                        j1 = j0+z*sy
+                        self._blockids[i1:i1+sy] = blockids[j1:j1+sy]
+                        self._blockdata[i1:i1+sy] = blockdata[j1:j1+sy]
+                        self._skylight[i1:i1+sy] = skylight[j1:j1+sy]
+                        self._blocklight[i1:i1+sy] = blocklight[j1:j1+sy]
             return
 
         def load(self, fp):
@@ -430,7 +428,8 @@ def main(argv):
     except OSError:
         pass
     for name in sorted(names):
-        outpath = os.path.join(outdir, name+'.mcr')
+        mcrname = name+'.mcr'
+        outpath = os.path.join(outdir, mcrname)
         if name not in maplogs and len(mcrs[name]) == 1 and os.path.isfile(outpath):
             # skip unchanged files.
             if not force: continue
@@ -461,6 +460,7 @@ def main(argv):
         outfp = open(outpath, 'wb')
         rgn.write(outfp)
         outfp.close()
+        print mcrname
     return 0
 
 if __name__ == '__main__': sys.exit(main(sys.argv))
