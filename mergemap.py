@@ -339,20 +339,21 @@ class RegionFile(object):
                    in enumerate(zip(offsets, timestamps)) ]
         return chunks
 
-    def load_mcr(self, fp):
+    def load_mcr(self, fp, pos=0):
         # read the chunks sequentially from the file.
         chunks = self.load_mcr_header(fp)
         chunks.sort(key=lambda (i,sector,size,timestamp): sector)
+        pos += 8192
         for (i,sector,size,timestamp) in chunks:
             if size == 0: continue
             (cz,cx) = divmod(i, 32)
             chunk = self.Chunk((cx,0,cz), timestamp)
-            pos = sector * 4096
-            # fp.seek(pos)
-            skip = pos-fp.tell()
+            # fp.seek(sector*4096)
+            skip = sector*4096 - pos
             assert 0 <= skip
             fp.read(skip)
-            chunk.load(fp)
+            pos += skip
+            pos += chunk.load(fp)
             sys.stderr.write('.'); sys.stderr.flush()
             self._chunks[chunk.key] = chunk
         sys.stderr.write('\n'); sys.stderr.flush()
@@ -496,20 +497,20 @@ class RegionMerger(object):
             for loc in mcrs:
                 try:
                     (fp,cp) = self.open_file(loc)
-                    print >>sys.stderr, 'reading mcr: %r' % (loc,)
-                    rgn.load_mcr(fp)
-                    self.close_file(fp, cp)
                 except (IOError, zipfile.BadZipfile):
-                    pass
+                    continue
+                print >>sys.stderr, 'reading mcr: %r' % (loc,)
+                rgn.load_mcr(fp)
+                self.close_file(fp, cp)
             # then merge .maplog files.
             for loc in maplogs:
                 try:
                     (fp,cp) = self.open_file(loc)
-                    print >>sys.stderr, 'reading maplog: %r' % (loc,)
-                    rgn.load_log(fp)
-                    self.close_file(fp, cp)
                 except (IOError, zipfile.BadZipfile):
-                    pass
+                    continue
+                print >>sys.stderr, 'reading maplog: %r' % (loc,)
+                rgn.load_log(fp)
+                self.close_file(fp, cp)
             # write the results.
             try:
                 os.rename(outpath, outpath+'.old')
