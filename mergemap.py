@@ -430,7 +430,8 @@ def main(argv):
     except OSError:
         pass
     for name in sorted(names):
-        if name not in maplogs and len(mcrs[name]) < 2:
+        outpath = os.path.join(outdir, name+'.mcr')
+        if name not in maplogs and len(mcrs[name]) == 1 and os.path.isfile(outpath):
             # skip unchanged files.
             if not force: continue
         (_,x,y) = name.split('.')
@@ -451,7 +452,6 @@ def main(argv):
                 fp.close()
             except IOError:
                 pass
-        outpath = os.path.join(outdir, name+'.mcr')
         try:
             os.rename(outpath, outpath+'.old')
             print >>sys.stderr, 'rename old: %r' % outpath
