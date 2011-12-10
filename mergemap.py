@@ -261,13 +261,13 @@ class RegionFile(object):
             return '<Chunk %r>' % self.key
 
         def put(self, x0, y0, z0, sx, sy, sz, data):
-            n = sx*sy*sz
-            assert len(data) == int(n*2.5), (len(data), sx,sy,sz)
-            blockids = array.array('c', data[:n])
-            nibs = unpack4(data[n:])
-            blockdata = array.array('b', nibs[:n])
-            skylight = array.array('b', nibs[n:n*2])
-            blocklight = array.array('b', nibs[n*2:])
+            nblks = sx*sy*sz
+            assert len(data) == int(nblks*2.5), (len(data), sx,sy,sz)
+            blockids = array.array('c', data[:nblks])
+            nibs = unpack4(data[nblks:])
+            blockdata = array.array('b', nibs[:nblks])
+            skylight = array.array('b', nibs[nblks:nblks*2])
+            blocklight = array.array('b', nibs[nblks*2:])
             assert len(blockids) == len(blockdata) == len(skylight) == len(blocklight)
             if x0 == y0 == z0 == 0 and sx == sz == 16 and sy == 128:
                 self._blockids[:] = blockids
@@ -275,18 +275,17 @@ class RegionFile(object):
                 self._skylight[:] = skylight
                 self._blocklight[:] = blocklight
             else:
-                for x in xrange(x0, x0+sx):
-                    if x < 0 or 16 <= x: continue
-                    i0 = x*16*128
-                    j0 = x*sz*sy
-                    for z in xrange(z0, z0+sz):
-                        if z < 0 or 16 <= z: continue
-                        i1 = i0+z*128+y0
-                        j1 = j0+z*sy
-                        self._blockids[i1:i1+sy] = blockids[j1:j1+sy]
-                        self._blockdata[i1:i1+sy] = blockdata[j1:j1+sy]
-                        self._skylight[i1:i1+sy] = skylight[j1:j1+sy]
-                        self._blocklight[i1:i1+sy] = blocklight[j1:j1+sy]
+                for dx in xrange(sx):
+                    i0 = (x0+dx)*16*128
+                    j0 = dx*sz*sy
+                    for dz in xrange(sz):
+                        i1 = i0+(z0+dz)*128+y0
+                        j1 = j0+dz*sy
+                        n = min(128-y0-sy, sy)
+                        self._blockids[i1:i1+n] = blockids[j1:j1+n]
+                        self._blockdata[i1:i1+n] = blockdata[j1:j1+n]
+                        self._skylight[i1:i1+n] = skylight[j1:j1+n]
+                        self._blocklight[i1:i1+n] = blocklight[j1:j1+n]
             return
 
         def load(self, fp):
@@ -480,18 +479,15 @@ class RegionMerger(object):
             print >>sys.stderr, '** chunk', name
             print >>sys.stderr, 'files', mcrs+maplogs
             if not maplogs and len(mcrs) == 1:
-                if os.path.isfile(outpath):
-                    # skip unchanged files.
-                    if not force: continue
-                else:
-                    # no merge is needed.
-                    loc = mcrs[0]
-                    try:
-                        print >>sys.stderr, 'copying: %r -> %r' % (loc, outpath)
-                        self.copy_file(loc, outpath)
-                    except (IOError, zipfile.BadZipfile):
-                        pass
-                    continue
+                # no merge is needed.
+                if os.path.isfile(outpath) and not force: continue
+                loc = mcrs[0]
+                try:
+                    print >>sys.stderr, 'copying: %r -> %r' % (loc, outpath)
+                    self.copy_file(loc, outpath)
+                except (IOError, zipfile.BadZipfile):
+                    pass
+                continue
             # first merge .mcr files.
             (_,x,y) = name.split('.')
             rgn = RegionFile(int(x), int(y))
