@@ -493,38 +493,38 @@ class RegionMerger(object):
                     self.copy_file(loc, outpath)
                 except (IOError, zipfile.BadZipfile):
                     pass
-                continue
-            # first merge .mcr files.
-            (_,x,y) = name.split('.')
-            rgn = RegionFile(int(x), int(y))
-            for loc in mcrs:
+            else:
+                # first merge .mcr files.
+                (_,x,y) = name.split('.')
+                rgn = RegionFile(int(x), int(y))
+                for loc in mcrs:
+                    try:
+                        (fp,cp) = self.open_file(loc)
+                    except (IOError, zipfile.BadZipfile):
+                        continue
+                    print >>sys.stderr, 'reading mcr: %r' % (loc,)
+                    rgn.load_mcr(fp)
+                    self.close_file(fp, cp)
+                # then merge .maplog files.
+                for loc in maplogs:
+                    try:
+                        (fp,cp) = self.open_file(loc)
+                    except (IOError, zipfile.BadZipfile):
+                        continue
+                    print >>sys.stderr, 'reading maplog: %r' % (loc,)
+                    rgn.load_log(fp)
+                    self.close_file(fp, cp)
+                # write the results.
                 try:
-                    (fp,cp) = self.open_file(loc)
-                except (IOError, zipfile.BadZipfile):
-                    continue
-                print >>sys.stderr, 'reading mcr: %r' % (loc,)
-                rgn.load_mcr(fp)
-                self.close_file(fp, cp)
-            # then merge .maplog files.
-            for loc in maplogs:
-                try:
-                    (fp,cp) = self.open_file(loc)
-                except (IOError, zipfile.BadZipfile):
-                    continue
-                print >>sys.stderr, 'reading maplog: %r' % (loc,)
-                rgn.load_log(fp)
-                self.close_file(fp, cp)
-            # write the results.
-            try:
-                oldpath = outpath+'.old'
-                os.rename(outpath, oldpath)
-                print >>sys.stderr, 'renaming: %r -> %r' % (outpath, oldpath)
-            except OSError:
-                pass
-            print >>sys.stderr, 'writing: %r' % outpath
-            outfp = open(outpath, 'wb')
-            rgn.write(outfp)
-            outfp.close()
+                    oldpath = outpath+'.old'
+                    os.rename(outpath, oldpath)
+                    print >>sys.stderr, 'renaming: %r -> %r' % (outpath, oldpath)
+                except OSError:
+                    pass
+                print >>sys.stderr, 'writing: %r' % outpath
+                outfp = open(outpath, 'wb')
+                rgn.write(outfp)
+                outfp.close()
             # print the file name.
             print mcrname
         return
