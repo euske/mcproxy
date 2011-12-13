@@ -258,7 +258,7 @@ class RegionFile(object):
             return
 
         def __repr__(self):
-            return '<Chunk %r>' % self.key
+            return '<Chunk %r>' % (self.key,)
 
         def put(self, x0, y0, z0, sx, sy, sz, data):
             nblks = sx*sy*sz
@@ -368,10 +368,11 @@ class RegionFile(object):
             data = fp.read(nbytes)
             data = zlib.decompress(data)
             (cx,cy,cz) = (x>>4,y>>7,z>>4)
-            if (cx,cy,cz) in self._chunks:
-                chunk = self._chunks[(cx,cy,cz)]
+            key = (cx % 32,0,cz % 32)
+            if key in self._chunks:
+                chunk = self._chunks[key]
             else:
-                chunk = self.Chunk((cx,cy,cz))
+                chunk = self.Chunk(key)
                 self._chunks[chunk.key] = chunk
             chunk.put(x&15,y&127,z&15, sx,sy,sz, data)
             sys.stderr.write('.'); sys.stderr.flush()
