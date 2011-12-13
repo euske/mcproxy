@@ -474,16 +474,18 @@ class RegionMerger(object):
             os.makedirs(self.outdir)
         except OSError:
             pass
-        for name in sorted(self.names):
+        for (i,name) in enumerate(sorted(self.names)):
             mcrname = name+'.mcr'
             outpath = os.path.join(self.outdir, mcrname)
             mcrs = self.mcrs.get(name, [])
             maplogs = self.maplogs.get(name, [])
-            print >>sys.stderr, '** chunk', name
-            print >>sys.stderr, 'files', mcrs+maplogs
+            print >>sys.stderr, '** chunk %s (%d/%d) **' % (name, i, len(self.names))
+            print >>sys.stderr, 'files: %r' % (mcrs+maplogs)
             if not maplogs and len(mcrs) == 1:
                 # no merge is needed.
-                if os.path.isfile(outpath) and not force: continue
+                if os.path.isfile(outpath) and not force:
+                    print >>sys.stderr, 'skipping'
+                    continue
                 loc = mcrs[0]
                 try:
                     print >>sys.stderr, 'copying: %r -> %r' % (loc, outpath)
@@ -513,8 +515,9 @@ class RegionMerger(object):
                 self.close_file(fp, cp)
             # write the results.
             try:
-                os.rename(outpath, outpath+'.old')
-                print >>sys.stderr, 'rename old: %r' % outpath
+                oldpath = outpath+'.old'
+                os.rename(outpath, oldpath)
+                print >>sys.stderr, 'renaming: %r -> %r' % (outpath, oldpath)
             except OSError:
                 pass
             print >>sys.stderr, 'writing: %r' % outpath
