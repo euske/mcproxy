@@ -528,7 +528,7 @@ class MCServerLogger(MCLogger):
         self.rec_player_health = player_health
         self.map_chunk_path = map_chunk_path
         self._h = -1
-        self._dim = 0
+        self._dim = None
         return
     
     def _server_info(self, seed, mode, dim, diff, height):
