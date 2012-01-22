@@ -33,6 +33,9 @@ def unpack4(data):
 def pos2chunk((x,y,z)):
     return (x>>4,y>>7,z>>4)
 
+def is_overlap((ax0,ay0,ax1,ay1), (bx0,by0,bx1,by1)):
+    return not (ax1 <= bx0 or bx1 <= ax0 or ay1 <= by0 or by1 <= ay0)
+
 
 ##  NBTObject
 ##
@@ -320,13 +323,15 @@ class RegionFile(object):
             fp.write(data)
             return len(data)+5
     
-    def __init__(self, key):
-        self.key = key
+    def __init__(self, (rx,rz), target=None):
+        self.rx = rx
+        self.rz = rz
+        self.target = target
         self._chunks = {}
         return
 
     def __repr__(self):
-        return '<RegionFile %r>' % (self.key)
+        return '<RegionFile (%d,%d)>' % (self.rx, self.rz)
 
     def load_mcr_header(self, fp):
         offsets = []
@@ -346,9 +351,16 @@ class RegionFile(object):
         chunks = self.load_mcr_header(fp)
         chunks.sort(key=lambda (i,sector,size,timestamp): sector)
         pos += 8192
+        bx = self.rx << 9
+        bz = self.rz << 9
         for (i,sector,size,timestamp) in chunks:
             if size == 0: continue
             (cz,cx) = divmod(i, 32)
+            x0 = bx + (cx<<4)
+            z0 = bz + (cz<<4)
+            if (self.target is not None and
+                not is_overlap(self.target, (x0, z0, x0+16, z0+16))):
+                continue
             chunk = self.Chunk((cx,0,cz), timestamp)
             # fp.seek(sector*4096)
             skip = sector*4096 - pos
@@ -370,6 +382,11 @@ class RegionFile(object):
             data = fp.read(nbytes)
             data = zlib.decompress(data)
             (cx,cy,cz) = pos2chunk((x,y,z))
+            x0 = (cx<<4)
+            z0 = (cz<<4)
+            if (self.target is not None and
+                not is_overlap(self.target, (x0, z0, x0+16, z0+16))):
+                continue
             key = (cx % 32,0,cz % 32)
             if key in self._chunks:
                 chunk = self._chunks[key]
@@ -409,8 +426,9 @@ class RegionFile(object):
 ##
 class RegionMerger(object):
 
-    def __init__(self, outdir):
+    def __init__(self, outdir, target=None):
         self.outdir = outdir
+        self.target = target
         self.keys = set()
         self.mcrs = {}
         self.maplogs = {}
@@ -435,7 +453,13 @@ class RegionMerger(object):
             print >>sys.stderr, 'unknown file format: %r' % path
             return
         (rx,rz,ext) = m.groups()
-        key = (int(rx), int(rz))
+        rx = int(rx)
+        rz = int(rz)
+        if (self.target is not None and
+            not is_overlap(self.target, (rx<<9, rz<<9, (rx<<9)+512, (rz<<9)+512))):
+            print >>sys.stderr, 'skipped: (%d, %d)' % (rx, rz)
+            return
+        key = (rx, rz)
         if ext == 'mcr':
             if key not in self.mcrs: self.mcrs[key] = []
             self.mcrs[key].append((path, container))
@@ -499,7 +523,7 @@ class RegionMerger(object):
                     pass
             else:
                 # first merge .mcr files.
-                rgn = RegionFile(key)
+                rgn = RegionFile(key, target=self.target)
                 for loc in mcrs:
                     try:
                         (fp,cp) = self.open_file(loc)
@@ -535,18 +559,20 @@ class RegionMerger(object):
 def main(argv):
     import getopt
     def usage():
-        print 'usage: %s [-o outdir] [file ...]' % argv[0]
+        print 'usage: %s [-o outdir] [-t %d,%d,%d,%d] [file ...]' % argv[0]
         return 100
     try:
-        (opts, args) = getopt.getopt(argv[1:], 'fo:')
+        (opts, args) = getopt.getopt(argv[1:], 'fo:t:')
     except getopt.GetoptError:
         return usage()
     force = False
     outdir = './region'
+    target = None
     for (k, v) in opts:
         if k == '-f': force = True
         elif k == '-o': outdir = v
-    merger = RegionMerger(outdir)
+        elif k == '-t': target = map(int, v.split(','))
+    merger = RegionMerger(outdir, target=target)
     for arg in args:
         for path in glob.glob(arg):
             merger.add_container(path)
