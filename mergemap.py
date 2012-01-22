@@ -426,10 +426,11 @@ class RegionFile(object):
 ##
 class RegionMerger(object):
 
-    def __init__(self, outdir, target=None):
+    def __init__(self, outdir, target=None, offset=None):
         self.outdir = outdir
         self.target = target
-        self.keys = set()
+        self.offset = offset
+        self.rgns = set()
         self.mcrs = {}
         self.maplogs = {}
         return
@@ -459,14 +460,13 @@ class RegionMerger(object):
             not is_overlap(self.target, (rx<<9, rz<<9, (rx<<9)+512, (rz<<9)+512))):
             print >>sys.stderr, 'skipped: (%d, %d)' % (rx, rz)
             return
-        key = (rx, rz)
         if ext == 'mcr':
-            if key not in self.mcrs: self.mcrs[key] = []
-            self.mcrs[key].append((path, container))
+            if (rx,rz) not in self.mcrs: self.mcrs[(rx,rz)] = []
+            self.mcrs[(rx,rz)].append((path, container))
         elif ext == 'maplog':
-            if key not in self.maplogs: self.maplogs[key] = []
-            self.maplogs[key].append((path, container))
-        self.keys.add(key)
+            if (rx,rz) not in self.maplogs: self.maplogs[(rx,rz)] = []
+            self.maplogs[(rx,rz)].append((path, container))
+        self.rgns.add((rx,rz))
         return
     
     def open_file(self, loc):
@@ -503,12 +503,16 @@ class RegionMerger(object):
             os.makedirs(self.outdir)
         except OSError:
             pass
-        for (i,key) in enumerate(sorted(self.keys)):
-            mcrname = 'r.%d.%d.mcr' % key
-            outpath = os.path.join(self.outdir, mcrname)
-            mcrs = self.mcrs.get(key, [])
-            maplogs = self.maplogs.get(key, [])
-            print >>sys.stderr, '** chunk %r (%d/%d) **' % (key, i, len(self.keys))
+        for (i,(rx,rz)) in enumerate(sorted(self.rgns)):
+            mcrname = 'r.%d.%d.mcr' % (rx,rz)
+            (rx1,rz1) = (rx,rz)
+            if self.offset is not None:
+                (dx,dy) = self.offset
+                (rx1,rz1) = (rx1-(dx>>9), rz1-(dx>>9))
+            outpath = os.path.join(self.outdir, 'r.%d.%d.mcr' % (rx1,rz1))
+            mcrs = self.mcrs.get((rx,rz), [])
+            maplogs = self.maplogs.get((rx,rz), [])
+            print >>sys.stderr, '** chunk (%d,%d) [%d/%d] **' % (rx, rz, i, len(self.rgns))
             print >>sys.stderr, 'files: %r' % (mcrs+maplogs)
             if not maplogs and len(mcrs) == 1:
                 # no merge is needed.
@@ -523,7 +527,7 @@ class RegionMerger(object):
                     pass
             else:
                 # first merge .mcr files.
-                rgn = RegionFile(key, target=self.target)
+                rgn = RegionFile((rx,rz), target=self.target)
                 for loc in mcrs:
                     try:
                         (fp,cp) = self.open_file(loc)
@@ -559,20 +563,22 @@ class RegionMerger(object):
 def main(argv):
     import getopt
     def usage():
-        print 'usage: %s [-o outdir] [-t %d,%d,%d,%d] [file ...]' % argv[0]
+        print 'usage: %s [-o outdir] [-t %d,%d,%d,%d] [-S %d,%d] [file ...]' % argv[0]
         return 100
     try:
-        (opts, args) = getopt.getopt(argv[1:], 'fo:t:')
+        (opts, args) = getopt.getopt(argv[1:], 'fo:t:S:')
     except getopt.GetoptError:
         return usage()
     force = False
     outdir = './region'
     target = None
+    offset = None
     for (k, v) in opts:
         if k == '-f': force = True
         elif k == '-o': outdir = v
         elif k == '-t': target = map(int, v.split(','))
-    merger = RegionMerger(outdir, target=target)
+        elif k == '-S': offset = map(int, v.split(','))
+    merger = RegionMerger(outdir, target=target, offset=offset)
     for arg in args:
         for path in glob.glob(arg):
             merger.add_container(path)
