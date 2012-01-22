@@ -10,7 +10,7 @@
 ##  usage: python mergemap.py -o world/region world/region/r.*.mcr maplog/r.*.maplog
 ##
 
-import sys, zlib, array, os, os.path, glob, zipfile
+import sys, zlib, array, os, os.path, glob, zipfile, re
 from cStringIO import StringIO
 from struct import pack, unpack
 
@@ -29,6 +29,9 @@ def unpack4(data):
         r.append(b >> 4)
         r.append(b & 15)
     return r
+
+def pos2chunk((x,y,z)):
+    return (x>>4,y>>7,z>>4)
 
 
 ##  NBTObject
@@ -317,14 +320,13 @@ class RegionFile(object):
             fp.write(data)
             return len(data)+5
     
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
+    def __init__(self, key):
+        self.key = key
         self._chunks = {}
         return
 
     def __repr__(self):
-        return '<RegionFile %r,%r>' % (self.x, self.y)
+        return '<RegionFile %r>' % (self.key)
 
     def load_mcr_header(self, fp):
         offsets = []
@@ -367,7 +369,7 @@ class RegionFile(object):
             (sx,sy,sz) = (sx+1,sy+1,sz+1)
             data = fp.read(nbytes)
             data = zlib.decompress(data)
-            (cx,cy,cz) = (x>>4,y>>7,z>>4)
+            (cx,cy,cz) = pos2chunk((x,y,z))
             key = (cx % 32,0,cz % 32)
             if key in self._chunks:
                 chunk = self._chunks[key]
@@ -409,7 +411,7 @@ class RegionMerger(object):
 
     def __init__(self, outdir):
         self.outdir = outdir
-        self.names = set()
+        self.keys = set()
         self.mcrs = {}
         self.maplogs = {}
         return
@@ -419,26 +421,28 @@ class RegionMerger(object):
             zf = zipfile.ZipFile(path)
             for zpath in zf.namelist():
                 if not zpath.endswith('/'):
-                    (name,_) = os.path.splitext(os.path.basename(zpath))
-                    loc = (path, zpath)
+                    name = os.path.basename(zpath)
                     self.add_file(name, zpath, container=path)
             zf.close()
         else:
-            (name,_) = os.path.splitext(os.path.basename(path))
+            name = os.path.basename(path)
             self.add_file(name, path)
         return
     
     def add_file(self, name, path, container=None):
-        if path.endswith('.mcr'):
-            if name not in self.mcrs: self.mcrs[name] = []
-            self.mcrs[name].append((path, container))
-            self.names.add(name)
-        elif path.endswith('.maplog'):
-            if name not in self.maplogs: self.maplogs[name] = []
-            self.maplogs[name].append((path, container))
-            self.names.add(name)
-        else:
+        m = re.match(r'^r\.([-0-9]+)\.([-0-9]+)\.(mcr|maplog)$', name, re.I)
+        if not m:
             print >>sys.stderr, 'unknown file format: %r' % path
+            return
+        (rx,rz,ext) = m.groups()
+        key = (int(rx), int(rz))
+        if ext == 'mcr':
+            if key not in self.mcrs: self.mcrs[key] = []
+            self.mcrs[key].append((path, container))
+        elif ext == 'maplog':
+            if key not in self.maplogs: self.maplogs[key] = []
+            self.maplogs[key].append((path, container))
+        self.keys.add(key)
         return
     
     def open_file(self, loc):
@@ -475,12 +479,12 @@ class RegionMerger(object):
             os.makedirs(self.outdir)
         except OSError:
             pass
-        for (i,name) in enumerate(sorted(self.names)):
-            mcrname = name+'.mcr'
+        for (i,key) in enumerate(sorted(self.keys)):
+            mcrname = 'r.%d.%d.mcr' % key
             outpath = os.path.join(self.outdir, mcrname)
-            mcrs = self.mcrs.get(name, [])
-            maplogs = self.maplogs.get(name, [])
-            print >>sys.stderr, '** chunk %s (%d/%d) **' % (name, i, len(self.names))
+            mcrs = self.mcrs.get(key, [])
+            maplogs = self.maplogs.get(key, [])
+            print >>sys.stderr, '** chunk %r (%d/%d) **' % (key, i, len(self.keys))
             print >>sys.stderr, 'files: %r' % (mcrs+maplogs)
             if not maplogs and len(mcrs) == 1:
                 # no merge is needed.
@@ -495,8 +499,7 @@ class RegionMerger(object):
                     pass
             else:
                 # first merge .mcr files.
-                (_,x,y) = name.split('.')
-                rgn = RegionFile(int(x), int(y))
+                rgn = RegionFile(key)
                 for loc in mcrs:
                     try:
                         (fp,cp) = self.open_file(loc)
