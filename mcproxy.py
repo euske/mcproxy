@@ -520,18 +520,24 @@ class MCServerLogger(MCLogger):
     def __init__(self, fp, safemode=False,
                  chat_text=True, time_update=True,
                  player_pos=True, player_health=True,
-                 map_chunk_path=None):
+                 map_chunk_path=None, map_seed=None, map_dimension=None):
         MCLogger.__init__(self, fp, safemode=safemode)
         self.rec_chat_text = chat_text
         self.rec_time_update = time_update
         self.rec_player_pos = player_pos
         self.rec_player_health = player_health
         self.map_chunk_path = map_chunk_path
-        self._h = -1
+        self.map_seed = map_seed
+        self.map_dimension = map_dimension
+        self._seed = None
         self._dim = None
+        self._h = -1
         return
     
     def _server_info(self, seed, mode, dim, diff, height):
+        self._write(' ### server info: seed=%d. mode=%d, dim=%d, diff=%d, height=%d' %
+                    (seed, mode, dim, diff, height))
+        self._seed = seed
         self._dim = dim
         return
 
@@ -565,20 +571,25 @@ class MCServerLogger(MCLogger):
         self._chunk_key = '%d.%d' % (x>>9, z>>9)
         self._chunk_info = (x,y,z,sx,sy,sz)
         self._chunk_data = ''
-        self._push(self._map_chunk_2, nbytes)
+        if (self.map_chunk_path is not None and
+            (self.map_seed is not None and self.map_seed == self._seed) and
+            (self.map_dimension is not None and self.map_dimension == self._dim)):
+            self._push(self._map_chunk_2, nbytes)
+        else:
+            self._push(self._bytes, nbytes)
         return
     
     def _map_chunk_2(self, c, arg):
         arg[0] -= 1
         self._chunk_data += c
         if arg[0] == 0:
-            if self._dim == 0 and self.map_chunk_path is not None:
-                path = os.path.join(self.map_chunk_path, 'r.%s.maplog' % self._chunk_key)
-                fp = file(path, 'ab')
-                fp.write(pack('>iiiiii', *self._chunk_info))
-                fp.write(pack('>i', len(self._chunk_data)))
-                fp.write(self._chunk_data)
-                fp.close()
+            name = 'r.%s.maplog' % self._chunk_key
+            path = os.path.join(self.map_chunk_path, name)
+            fp = file(path, 'ab')
+            fp.write(pack('>iiiiii', *self._chunk_info))
+            fp.write(pack('>i', len(self._chunk_data)))
+            fp.write(self._chunk_data)
+            fp.close()
             self._pop()
         return True
     
@@ -783,7 +794,7 @@ class MCProxyServer(Server):
                  safemode=True,
                  chat_text=True, time_update=True,
                  player_pos=True, player_health=True,
-                 map_chunk_path=None):
+                 map_chunk_path=None, map_seed=None, map_dimension=None):
         Server.__init__(self, port, destaddr, bindaddr=bindaddr)
         self.output = output
         self.safemode = safemode
@@ -792,6 +803,8 @@ class MCProxyServer(Server):
         self.player_pos = player_pos
         self.player_health = player_health
         self.map_chunk_path = map_chunk_path
+        self.map_seed = map_seed
+        self.map_dimension = map_dimension
         return
 
     def create_proxy(self, conn, session):
@@ -803,7 +816,9 @@ class MCProxyServer(Server):
                                       time_update=self.time_update,
                                       player_pos=self.player_pos,
                                       player_health=self.player_health,
-                                      map_chunk_path=self.map_chunk_path)
+                                      map_chunk_path=self.map_chunk_path,
+                                      map_seed=self.map_seed,
+                                      map_dimension=self.map_dimension)
         clientlogger = MCClientLogger(fp, safemode=self.safemode,
                                       chat_text=self.chat_text,
                                       player_pos=self.player_pos)
@@ -817,22 +832,28 @@ def main(argv):
         print 'usage: %s [-d] [-o output] [-p port] [-t testfile] [-U] [-M path] hostname:port' % argv[0]
         return 100
     try:
-        (opts, args) = getopt.getopt(argv[1:], 'do:p:t:UM:')
+        (opts, args) = getopt.getopt(argv[1:], 'do:b:p:t:UM:S:D:')
     except getopt.GetoptError:
         return usage()
     debug = 0
     output = 'mclog-%Y%m%d.txt'
+    bindaddr = '127.0.0.1'
     listen = 25565
     testfile = None
     safemode = True
     map_chunk_path = None
+    map_seed = None
+    map_dimension = None
     for (k, v) in opts:
         if k == '-d': debug += 1
         elif k == '-o': output = v
+        elif k == '-b': bindaddr = v
         elif k == '-p': listen = int(v)
         elif k == '-t': testfile = file(v, 'rb')
         elif k == '-U': safemode = False
         elif k == '-M': map_chunk_path = v
+        elif k == '-S': map_seed = long(v)
+        elif k == '-D': map_dimension = int(v)
     if testfile is not None:
         MCParser.debugfp = sys.stderr
         parser = MCServerLogger(sys.stdout)
@@ -860,9 +881,10 @@ def main(argv):
         MCParser.debugfp = file('parser.log', 'w')
         Proxy.local2remotefp = file('client.log', 'wb')
         Proxy.remote2localfp = file('server.log', 'wb')
-    MCProxyServer(listen, (hostname, port), output,
-                  safemode=safemode,
-                  map_chunk_path=map_chunk_path)
+    MCProxyServer(listen, (hostname, port), output, 
+                  bindaddr=bindaddr, safemode=safemode,
+                  map_chunk_path=map_chunk_path,
+                  map_seed=map_seed, map_dimension=map_dimension)
     asyncore.loop()
     return
 
