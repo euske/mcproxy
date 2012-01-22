@@ -48,5 +48,5 @@ http://mc.kev009.com/Protocol
 
 Terms and Conditions:
 
-This program is in public domain.  
+This program is in public domain and comes with ABSOLUTELY NO WARRANTY.
 There's no need to ask permission of doing anything with this program.
