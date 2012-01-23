@@ -323,10 +323,10 @@ class RegionFile(object):
             fp.write(data)
             return len(data)+5
     
-    def __init__(self, (rx,rz), target=None):
+    def __init__(self, (rx,rz), clipping=None):
         self.rx = rx
         self.rz = rz
-        self.target = target
+        self.clipping = clipping
         self._chunks = {}
         return
 
@@ -358,8 +358,8 @@ class RegionFile(object):
             (cz,cx) = divmod(i, 32)
             x0 = bx + (cx<<4)
             z0 = bz + (cz<<4)
-            if (self.target is not None and
-                not is_overlap(self.target, (x0, z0, x0+16, z0+16))):
+            if (self.clipping is not None and
+                not is_overlap(self.clipping, (x0, z0, x0+16, z0+16))):
                 continue
             chunk = self.Chunk((cx,0,cz), timestamp)
             # fp.seek(sector*4096)
@@ -384,8 +384,8 @@ class RegionFile(object):
             (cx,cy,cz) = pos2chunk((x,y,z))
             x0 = (cx<<4)
             z0 = (cz<<4)
-            if (self.target is not None and
-                not is_overlap(self.target, (x0, z0, x0+16, z0+16))):
+            if (self.clipping is not None and
+                not is_overlap(self.clipping, (x0, z0, x0+16, z0+16))):
                 continue
             key = (cx % 32,0,cz % 32)
             if key in self._chunks:
@@ -426,9 +426,9 @@ class RegionFile(object):
 ##
 class RegionMerger(object):
 
-    def __init__(self, outdir, target=None, offset=None):
+    def __init__(self, outdir, clipping=None, offset=None):
         self.outdir = outdir
-        self.target = target
+        self.clipping = clipping
         self.offset = offset
         self.rgns = set()
         self.mcrs = {}
@@ -456,8 +456,8 @@ class RegionMerger(object):
         (rx,rz,ext) = m.groups()
         rx = int(rx)
         rz = int(rz)
-        if (self.target is not None and
-            not is_overlap(self.target, (rx<<9, rz<<9, (rx<<9)+512, (rz<<9)+512))):
+        if (self.clipping is not None and
+            not is_overlap(self.clipping, (rx<<9, rz<<9, (rx<<9)+512, (rz<<9)+512))):
             print >>sys.stderr, 'skipped: (%d, %d)' % (rx, rz)
             return
         if ext == 'mcr':
@@ -527,7 +527,7 @@ class RegionMerger(object):
                     pass
             else:
                 # first merge .mcr files.
-                rgn = RegionFile((rx,rz), target=self.target)
+                rgn = RegionFile((rx,rz), clipping=self.clipping)
                 for loc in mcrs:
                     try:
                         (fp,cp) = self.open_file(loc)
@@ -557,32 +557,33 @@ class RegionMerger(object):
                 rgn.write(outfp)
                 outfp.close()
             # print the file name.
-            print mcrname
+            print mcrname, ' '.join( path for (path,_) in mcrs+maplogs )
         return
 
 def main(argv):
     import getopt
     def usage():
-        print 'usage: %s [-o outdir] [-t %d,%d,%d,%d] [-S %d,%d] [file ...]' % argv[0]
+        print 'usage: %s [-o outdir] [-C x0,z0,x1,z1] [-S x,z] [file ...]' % argv[0]
         return 100
     try:
-        (opts, args) = getopt.getopt(argv[1:], 'fo:t:S:')
+        (opts, args) = getopt.getopt(argv[1:], 'fo:C:S:')
     except getopt.GetoptError:
         return usage()
     force = False
     outdir = './region'
-    target = None
+    clipping = None
     offset = None
     for (k, v) in opts:
         if k == '-f': force = True
         elif k == '-o': outdir = v
-        elif k == '-t': target = map(int, v.split(','))
+        elif k == '-C': clipping = map(int, v.split(','))
         elif k == '-S': offset = map(int, v.split(','))
-    merger = RegionMerger(outdir, target=target, offset=offset)
+    if not args: return usage()
+    merger = RegionMerger(outdir, clipping=clipping, offset=offset)
     for arg in args:
         for path in glob.glob(arg):
             merger.add_container(path)
-    merger.run(force=force)
-    return 0
+    if not merger.rgns: return 1
+    return merger.run(force=force)
 
 if __name__ == '__main__': sys.exit(main(sys.argv))
