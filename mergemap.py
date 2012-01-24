@@ -504,16 +504,17 @@ class RegionMerger(object):
         except OSError:
             pass
         for (i,(rx,rz)) in enumerate(sorted(self.rgns)):
-            mcrname = 'r.%d.%d.mcr' % (rx,rz)
             (rx1,rz1) = (rx,rz)
             if self.offset is not None:
                 (dx,dy) = self.offset
                 (rx1,rz1) = (rx1-(dx>>9), rz1-(dx>>9))
-            outpath = os.path.join(self.outdir, 'r.%d.%d.mcr' % (rx1,rz1))
+            mcrname = 'r.%d.%d.mcr' % (rx1,rz1)
+            outpath = os.path.join(self.outdir, mcrname)
             mcrs = self.mcrs.get((rx,rz), [])
             maplogs = self.maplogs.get((rx,rz), [])
             print >>sys.stderr, '** chunk (%d,%d) [%d/%d] **' % (rx, rz, i, len(self.rgns))
-            print >>sys.stderr, 'files: %r' % (mcrs+maplogs)
+            for (path,container) in (mcrs+maplogs):
+                print '#', container
             if not maplogs and len(mcrs) == 1:
                 # no merge is needed.
                 if os.path.isfile(outpath) and not force:
@@ -556,8 +557,7 @@ class RegionMerger(object):
                 outfp = open(outpath, 'wb')
                 rgn.write(outfp)
                 outfp.close()
-            # print the file name.
-            print mcrname, ' '.join( path for (path,_) in mcrs+maplogs )
+            print mcrname
         return
 
 def main(argv):
