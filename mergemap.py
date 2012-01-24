@@ -474,7 +474,7 @@ class RegionMerger(object):
         try:
             if container is not None:
                 zf = zipfile.ZipFile(container)
-                return (zf.open(path, 'r'), zf)
+                return (StringIO(zf.read(path)), zf)
             else:
                 return (open(path, 'rb'), None)
         except (IOError, zipfile.BadZipfile), e:

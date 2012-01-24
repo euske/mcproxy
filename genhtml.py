@@ -7,12 +7,14 @@ import sys, os, re, time, stat, fileinput
 
 LINE = re.compile(r'^([^:]+):([^:]+):(.*)')
 COORDS = re.compile(r'[-\d]+')
+TITLE = re.compile(r'\s+portal\s*$', flags=re.I)
+NAME = re.compile(r'[^-_a-z0-9]', flags=re.I)
 def get_entry(line):
     m = LINE.match(line)
     if not m: raise ValueError(line)
     (t, title, xyz) = m.groups()
-    title = re.sub(r'\s+portal\s*$', '', title, flags=re.I)
-    name = re.sub(r'[^-_a-z0-9]', '', title, flags=re.I)
+    title = TITLE.sub('', title)
+    name = NAME.sub('', title)
     f = [ int(m.group(0)) for m in COORDS.finditer(xyz) ]
     if len(f) == 3:
         (x,y,z) = f
