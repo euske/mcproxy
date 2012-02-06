@@ -5,14 +5,14 @@
 
 import sys, os, re, time, stat, fileinput
 
-LINE = re.compile(r'^([^:]+):([^:]+):(.*)')
+ENTRY = re.compile(r'^([^:]+):([^:]+):([^:]+):(.*)')
 COORDS = re.compile(r'[-\d]+')
 TITLE = re.compile(r'\s+portal\s*$', flags=re.I)
 NAME = re.compile(r'[^-_a-z0-9]', flags=re.I)
 def get_entry(line):
-    m = LINE.match(line)
+    m = ENTRY.match(line)
     if not m: raise ValueError(line)
-    (t, title, xyz) = m.groups()
+    (t, size, title, xyz) = m.groups()
     title = TITLE.sub('', title)
     name = NAME.sub('', title)
     f = [ int(m.group(0)) for m in COORDS.finditer(xyz) ]
@@ -23,7 +23,7 @@ def get_entry(line):
         y = 64
     else:
         raise ValueError(line)
-    return (t, (t+'_'+name, title, (x,y,z)))
+    return (t+'_'+name, int(size), title, (x,y,z))
 
 def read_entries(fp):
     for line in fp:
@@ -86,14 +86,14 @@ def main(argv):
     for line in fp:
         m = ENTRIES.search(line)
         if m:
-            for (_,(name,title,(x,y,z))) in entries:
+            for (name,_,title,(x,y,z)) in entries:
                 out.write(' { name:"%s", title:"%s", x:%s, y:%s, z:%s },\n' % (name,title,x,y,z))
             continue
         m = MARKERS.search(line)
         if m:
             t0 = m.group(1)
-            for (t1,(name,title,_)) in entries:
-                if t0 != t1: continue
+            for (name,_,title,_) in entries:
+                if name[0] != t0: continue
                 out.write('<div>')
                 out.write('<a href="javascript:void(0);" onclick="gotoLocationByName(%r);">%s</a>' % (name, title))
                 if add_commap:
