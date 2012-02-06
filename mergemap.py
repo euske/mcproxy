@@ -458,7 +458,7 @@ class RegionMerger(object):
         rz = int(rz)
         if (self.clipping is not None and
             not is_overlap(self.clipping, (rx<<9, rz<<9, (rx<<9)+512, (rz<<9)+512))):
-            print >>sys.stderr, 'skipped: (%d, %d)' % (rx, rz)
+            #print >>sys.stderr, 'skipped: (%d, %d)' % (rx, rz)
             return
         if ext == 'mcr':
             if (rx,rz) not in self.mcrs: self.mcrs[(rx,rz)] = []
@@ -503,6 +503,7 @@ class RegionMerger(object):
             os.makedirs(self.outdir)
         except OSError:
             pass
+        retval = 1
         for (i,(rx,rz)) in enumerate(sorted(self.rgns)):
             (rx1,rz1) = (rx,rz)
             if self.offset is not None:
@@ -514,7 +515,7 @@ class RegionMerger(object):
             maplogs = self.maplogs.get((rx,rz), [])
             print >>sys.stderr, '** chunk (%d,%d) [%d/%d] **' % (rx, rz, i, len(self.rgns))
             for (path,container) in (mcrs+maplogs):
-                print '#', container
+                print '#', path, container
             if not maplogs and len(mcrs) == 1:
                 # no merge is needed.
                 if os.path.isfile(outpath) and not force:
@@ -557,8 +558,9 @@ class RegionMerger(object):
                 outfp = open(outpath, 'wb')
                 rgn.write(outfp)
                 outfp.close()
+            retval = 0
             print mcrname
-        return
+        return retval
 
 def main(argv):
     import getopt
@@ -583,7 +585,6 @@ def main(argv):
     for arg in args:
         for path in glob.glob(arg):
             merger.add_container(path)
-    if not merger.rgns: return 1
     return merger.run(force=force)
 
 if __name__ == '__main__': sys.exit(main(sys.argv))
