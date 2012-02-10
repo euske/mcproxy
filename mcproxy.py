@@ -3,7 +3,7 @@
 ##  Minecraft Logger Proxy by Yusuke Shinyama
 ##  * this program is in public domain *
 ##
-##  Supported version: Minecraft 1.0 / Protocol version 22 (2011/11/21)
+##  Supported version: Minecraft 1.1 / Protocol version 23 (2012/2/10)
 ##
 ##  usage: $ python mcproxy.py mcserver.example.com
 ##
@@ -22,12 +22,14 @@ def toint(x):
     return unpack('>i', x)[0]
 def tolong(x):
     return unpack('>q', x)[0]
+def touni(x):
+    return x.decode('utf-16be')
 def dist((x0,y0,z0),(x1,y1,z1)):
     return abs(x0-x1)+abs(y0-y1)+abs(z0-z1)
 
 
 ##  MCParser
-##  (for Protocol. cf. http://mc.kev009.com/wiki/index.php?title=Protocol&oldid=1510)
+##  (for Protocol. cf. http://mc.kev009.com/wiki/index.php?title=Protocol&oldid=1810)
 ##
 class MCParser(object):
 
@@ -99,12 +101,12 @@ class MCParser(object):
             self._push(self._bytes, toshort(arg[0])*2)
         return True
 
-    def _protocol_version(self, version):
-        #print 'version', version
+    def _login_info(self, entid, username):
+        #print 'login', (entid, username)
         return
 
-    def _server_info(self, seed, mode, dim, diff, height):
-        #print 'info', (seed, mode, dim, diff, height)
+    def _server_info(self, seed, wtype, mode, dim, diff, height):
+        #print 'server', (seed, wtype, mode, dim, diff, height)
         return
 
     def _chat_text(self, s):
@@ -132,18 +134,51 @@ class MCParser(object):
         self._push(self._bytes, nbytes)
         return
         
-    def _special_01(self, c, arg):
+    def _special_01(self, c, arg): # int
         arg[0] += c
         if len(arg[0]) == 4:
             self._pop()
-            self._protocol_version(toint(arg[0]))
+            self._push(self._special_01_2, ['', toint(arg[0])])
         return True
-    def _special_01_2(self, c, arg):
+    def _special_01_2(self, c, arg): # str16
+        arg[0] += c
+        if len(arg[0]) == 2:
+            self._pop()
+            self._push(self._special_01_3, ['', arg[1], toshort(arg[0])*2])
+        return True
+    def _special_01_3(self, c, arg):
+        if len(arg[0]) == arg[2]:
+            self._pop()
+            self._login_info(arg[1], touni(arg[0]))
+            self._push(self._special_01_4)
+            return False
+        arg[0] += c
+        return True
+    def _special_01_4(self, c, arg): # long
+        arg[0] += c
+        if len(arg[0]) == 8:
+            self._pop()
+            self._push(self._special_01_5, ['', arg[0]])
+        return True
+    def _special_01_5(self, c, arg): # str16
+        arg[0] += c
+        if len(arg[0]) == 2:
+            self._pop()
+            self._push(self._special_01_6, ['', arg[1], toshort(arg[0])*2])
+        return True
+    def _special_01_6(self, c, arg):
+        if len(arg[0]) == arg[2]:
+            self._pop()
+            self._push(self._special_01_7, [arg[1], touni(arg[0])])
+            return False
+        arg[0] += c
+        return True
+    def _special_01_7(self, c, arg): # (int,byte,byte,ubyte,ubyte)
         arg[0] += c
         if len(arg[0]) == 16:
             self._pop()
             (seed,mode,dim,diff,height,nplayers) = unpack('>qibbBB', arg[0])
-            self._server_info(seed, mode, dim, diff, height)
+            self._server_info(seed, arg[1], mode, dim, diff, height)
         return True
     
     def _special_03(self, c, arg):
@@ -153,11 +188,11 @@ class MCParser(object):
             self._push(self._special_03_2, ['', toshort(arg[0])*2])
         return True
     def _special_03_2(self, c, arg):
-        arg[0] += c
-        arg[1] -= 1
-        if arg[1] == 0:
+        if len(arg[0]) == arg[1]:
             self._pop()
-            self._chat_text(arg[0].decode('utf-16be'))
+            self._chat_text(touni(arg[0]))
+            return False
+        arg[0] += c
         return True
         
     def _special_04(self, c, arg):
@@ -187,8 +222,21 @@ class MCParser(object):
         arg[0] += c
         if len(arg[0]) == 13:
             self._pop()
-            (dim,diff,mode,height,seed) = unpack('>bbbhq', arg[0])
-            self._server_info(seed, mode, dim, diff, height)
+            self._push(self._special_09_2, ['', arg[0]])
+        return True
+    def _special_09_2(self, c, arg): # str16
+        arg[0] += c
+        if len(arg[0]) == 2:
+            self._pop()
+            self._push(self._special_09_3, ['', arg[1], toshort(arg[0])*2])
+        return True
+    def _special_09_3(self, c, arg):
+        if len(arg[0]) == arg[2]:
+            self._pop()
+            (dim,diff,mode,height,seed) = unpack('>bbbhq', arg[1])
+            self._server_info(seed, touni(arg[0]), mode, dim, diff, height)
+            return False
+        arg[0] += c
         return True
 
     def _special_0b(self, c, arg):
@@ -266,6 +314,13 @@ class MCParser(object):
         self._push(self._bytes, ord(c))
         return True
 
+    def _special_fa(self, c, arg):
+        arg[0] += c
+        if len(arg[0]) == 2:
+            self._pop()
+            self._push(self._bytes, toshort(arg[0]))
+        return True
+    
     ENCHANTABLE_ITEMS = set([
         0x103, #Flint and steel
         0x105, #Bow
@@ -338,8 +393,6 @@ class MCParser(object):
         if c == 0x00:
             self._push(self._bytes, 4)
         elif c == 0x01:
-            self._push(self._special_01_2)
-            self._push(self._str16)
             self._push(self._special_01)
         elif c == 0x02:
             self._push(self._str16)
@@ -485,6 +538,9 @@ class MCParser(object):
         elif c == 0xc9:
             self._push(self._bytes, 3)
             self._push(self._str16)
+        elif c == 0xfa:
+            self._push(self._special_fa)
+            self._push(self._str16)
         elif c == 0xfe:
             pass
         elif c == 0xff:
@@ -534,9 +590,9 @@ class MCServerLogger(MCLogger):
         self._h = -1
         return
     
-    def _server_info(self, seed, mode, dim, diff, height):
-        self._write(' ### server info: seed=%d. mode=%d, dim=%d, diff=%d, height=%d' %
-                    (seed, mode, dim, diff, height))
+    def _server_info(self, seed, wtype, mode, dim, diff, height):
+        self._write(' ### server info: seed=%d, wtype=%r, mode=%d, dim=%d, diff=%d, height=%d' %
+                    (seed, wtype, mode, dim, diff, height))
         self._seed = seed
         self._dim = dim
         return
