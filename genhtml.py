@@ -2,17 +2,21 @@
 ##
 ##  map html generator (for pigmap)
 ##
+##  coords.txt file format:
+##    # for comment
+##    Type:Location:Name: (x,y,z)
+##
 
 import sys, os, re, time, stat, fileinput
 
-ENTRY = re.compile(r'^([^:]+):([^:]+):([^:]+):(.*)')
+ENTRY = re.compile(r'^([^:]*):([^:]*):([^:]*):(.*)')
 COORDS = re.compile(r'[-\d]+')
 TITLE = re.compile(r'\s+portal\s*$', flags=re.I)
 NAME = re.compile(r'[^-_a-z0-9]', flags=re.I)
 def get_entry(line):
     m = ENTRY.match(line)
     if not m: raise ValueError(line)
-    (t, size, title, xyz) = m.groups()
+    (t, loc, title, xyz) = m.groups()
     title = TITLE.sub('', title)
     name = NAME.sub('', title)
     f = [ int(m.group(0)) for m in COORDS.finditer(xyz) ]
@@ -23,7 +27,7 @@ def get_entry(line):
         y = 64
     else:
         raise ValueError(line)
-    return (t+'_'+name, int(size), title, (x,y,z))
+    return (t+'_'+name, loc, title, (x,y,z))
 
 def read_entries(fp):
     for line in fp:
@@ -86,18 +90,20 @@ def main(argv):
     for line in fp:
         m = ENTRIES.search(line)
         if m:
-            for (name,_,title,(x,y,z)) in entries:
-                out.write(' { name:"%s", title:"%s", x:%s, y:%s, z:%s },\n' % (name,title,x,y,z))
+            for (name,loc,title,(x,y,z)) in entries:
+                out.write(' { name:"%s", loc:"%s", title:"%s", x:%s, y:%s, z:%s },\n' % (name,loc,title,x,y,z))
             continue
         m = MARKERS.search(line)
         if m:
             t0 = m.group(1)
-            for (name,_,title,_) in entries:
+            for (name,loc,title,_) in entries:
                 if name[0] != t0: continue
                 out.write('<div>')
                 out.write('<a href="javascript:void(0);" onclick="gotoLocationByName(%r);">%s</a>' % (name, title))
                 if add_commap:
                     out.write(' <small>(<a href="./map/%s/index.html#name=%s" target="%s">map</a>)</small>' % (name, name, name))
+                if loc:
+                    out.write(' <small>(%s)</small>' % (loc))
                 out.write('</div>\n')
             continue
         out.write(PARAM.sub(lambda m: params[m.group(1)], line))
