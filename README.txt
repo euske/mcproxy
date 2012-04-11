@@ -17,7 +17,7 @@ and recorded on a disk.
 
 Current supported version:
 
-Minecraft 1.0
+Minecraft 1.2
 
 
 How to use:
