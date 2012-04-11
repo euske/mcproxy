@@ -3,7 +3,7 @@
 ##  Minecraft Logger Proxy by Yusuke Shinyama
 ##  * this program is in public domain *
 ##
-##  Supported version: Minecraft 1.1 / Protocol version 23 (2012/2/10)
+##  Supported version: Minecraft 1.2 / Protocol version 29 (2012/4/10)
 ##
 ##  usage: $ python mcproxy.py mcserver.example.com
 ##
@@ -105,8 +105,8 @@ class MCParser(object):
         #print 'login', (entid, username)
         return
 
-    def _server_info(self, seed, wtype, mode, dim, diff, height):
-        #print 'server', (seed, wtype, mode, dim, diff, height)
+    def _server_info(self, wtype, mode, dim, diff, height):
+        #print 'server', (wtype, mode, dim, diff, height)
         return
 
     def _chat_text(self, s):
@@ -129,7 +129,7 @@ class MCParser(object):
         #print 'mob', (eid,t,x,y,z)
         return
 
-    def _map_chunk(self, (x,y,z), (sx,sy,sz), nbytes):
+    def _map_chunk(self, (x,z,g,b1,b2), nbytes):
         #print 'map', (x,y,z), (sx,sy,sz), nbytes
         self._push(self._bytes, nbytes)
         return
@@ -154,31 +154,25 @@ class MCParser(object):
             return False
         arg[0] += c
         return True
-    def _special_01_4(self, c, arg): # long
-        arg[0] += c
-        if len(arg[0]) == 8:
-            self._pop()
-            self._push(self._special_01_5, ['', arg[0]])
-        return True
-    def _special_01_5(self, c, arg): # str16
+    def _special_01_4(self, c, arg): # str16
         arg[0] += c
         if len(arg[0]) == 2:
             self._pop()
-            self._push(self._special_01_6, ['', arg[1], toshort(arg[0])*2])
+            self._push(self._special_01_5, ['', toshort(arg[0])*2])
         return True
-    def _special_01_6(self, c, arg):
-        if len(arg[0]) == arg[2]:
+    def _special_01_5(self, c, arg):
+        if len(arg[0]) == arg[1]:
             self._pop()
-            self._push(self._special_01_7, [arg[1], touni(arg[0])])
+            self._push(self._special_01_6, ['', touni(arg[0])])
             return False
         arg[0] += c
         return True
-    def _special_01_7(self, c, arg): # (int,byte,byte,ubyte,ubyte)
+    def _special_01_6(self, c, arg): # (int,int,byte,ubyte,ubyte)
         arg[0] += c
-        if len(arg[0]) == 16:
+        if len(arg[0]) == 11:
             self._pop()
-            (seed,mode,dim,diff,height,nplayers) = unpack('>qibbBB', arg[0])
-            self._server_info(seed, arg[1], mode, dim, diff, height)
+            (mode,dim,diff,height,nplayers) = unpack('>iibBB', arg[0])
+            self._server_info(arg[1], mode, dim, diff, height)
         return True
     
     def _special_03(self, c, arg):
@@ -220,7 +214,7 @@ class MCParser(object):
         
     def _special_09(self, c, arg):
         arg[0] += c
-        if len(arg[0]) == 13:
+        if len(arg[0]) == 8:
             self._pop()
             self._push(self._special_09_2, ['', arg[0]])
         return True
@@ -233,8 +227,8 @@ class MCParser(object):
     def _special_09_3(self, c, arg):
         if len(arg[0]) == arg[2]:
             self._pop()
-            (dim,diff,mode,height,seed) = unpack('>bbbhq', arg[1])
-            self._server_info(seed, touni(arg[0]), mode, dim, diff, height)
+            (dim,diff,mode,height) = unpack('>ibbh', arg[1])
+            self._server_info(touni(arg[0]), mode, dim, diff, height)
             return False
         arg[0] += c
         return True
@@ -265,26 +259,26 @@ class MCParser(object):
     
     def _special_18(self, c, arg):
         arg[0] += c
-        if len(arg[0]) == 19:
+        if len(arg[0]) == 20:
             self._pop()
-            (eid,t,x,y,z,yaw,pitch) = unpack('>ibiiibb', arg[0])
+            (eid,t,x,y,z,yaw,pitch,head) = unpack('>ibiiibbb', arg[0])
             self._mob_spawn(eid,t,x/32.0,y/32.0,z/32.0)
         return True
     
     def _special_33(self, c, arg):
         arg[0] += c
-        if len(arg[0]) == 17:
+        if len(arg[0]) == 21:
             self._pop()
-            (x,y,z,sx,sy,sz,nbytes) = unpack('>ihibbbi', arg[0])
-            self._map_chunk((x,y,z), (sx,sy,sz), nbytes)
+            (x,z,g,b1,b2,nbytes,_) = unpack('>iibHHii', arg[0])
+            self._map_chunk((x,z,g,b1,b2), nbytes)
         return True
 
     def _special_34(self, c, arg):
         arg[0] += c
-        if len(arg[0]) == 2:
+        if len(arg[0]) == 4:
             self._pop()
-            n = toshort(arg[0])
-            self._push(self._bytes, n*4)
+            n = toint(arg[0])
+            self._push(self._bytes, n)
         return True
 
     def _special_3c(self, c, arg):
@@ -467,6 +461,8 @@ class MCParser(object):
             self._push(self._bytes, 9)
         elif c == 0x22:
             self._push(self._bytes, 18)
+        elif c == 0x23:
+            self._push(self._bytes, 5)
         elif c == 0x26:
             self._push(self._bytes, 5)
         elif c == 0x27:
@@ -486,7 +482,7 @@ class MCParser(object):
             self._push(self._special_33)
         elif c == 0x34:
             self._push(self._special_34)
-            self._push(self._bytes, 8)
+            self._push(self._bytes, 10)
         elif c == 0x35:
             self._push(self._bytes, 11)
         elif c == 0x36:
@@ -533,11 +529,15 @@ class MCParser(object):
         elif c == 0x83:
             self._push(self._special_83, 4)
             self._push(self._bytes, 4)            
+        elif c == 0x84:
+            self._push(self._bytes, 23)
         elif c == 0xc8:
             self._push(self._bytes, 5)
         elif c == 0xc9:
             self._push(self._bytes, 3)
             self._push(self._str16)
+        elif c == 0xca:
+            self._push(self._bytes, 4)
         elif c == 0xfa:
             self._push(self._special_fa)
             self._push(self._str16)
@@ -576,24 +576,21 @@ class MCServerLogger(MCLogger):
     def __init__(self, fp, safemode=False,
                  chat_text=True, time_update=True,
                  player_pos=True, player_health=True,
-                 map_chunk_path=None, map_seed=None, map_dimension=None):
+                 map_chunk_path=None, map_dimension=None):
         MCLogger.__init__(self, fp, safemode=safemode)
         self.rec_chat_text = chat_text
         self.rec_time_update = time_update
         self.rec_player_pos = player_pos
         self.rec_player_health = player_health
         self.map_chunk_path = map_chunk_path
-        self.map_seed = map_seed
         self.map_dimension = map_dimension
-        self._seed = None
         self._dim = None
         self._h = -1
         return
     
-    def _server_info(self, seed, wtype, mode, dim, diff, height):
-        self._write(' ### server info: seed=%d, wtype=%r, mode=%d, dim=%d, diff=%d, height=%d' %
-                    (seed, wtype, mode, dim, diff, height))
-        self._seed = seed
+    def _server_info(self, wtype, mode, dim, diff, height):
+        self._write(' ### server info: wtype=%r, mode=%d, dim=%d, diff=%d, height=%d' %
+                    (wtype, mode, dim, diff, height))
         self._dim = dim
         return
 
@@ -623,12 +620,11 @@ class MCServerLogger(MCLogger):
         self._write(' +++ hp=%d, food=%d, sat=%.1f' % (hp, food, sat))
         return
 
-    def _map_chunk(self, (x,y,z), (sx,sy,sz), nbytes):
+    def _map_chunk(self, (x,z,g,b1,b2), nbytes):
         self._chunk_key = '%d.%d' % (x>>9, z>>9)
-        self._chunk_info = (x,y,z,sx,sy,sz)
+        self._chunk_info = pack('>iibHH', x,z,g,b1,b2)
         self._chunk_data = ''
         if (self.map_chunk_path is not None and
-            (self.map_seed is not None and self.map_seed == self._seed) and
             (self.map_dimension is not None and self.map_dimension == self._dim)):
             self._push(self._map_chunk_2, nbytes)
         else:
@@ -642,7 +638,7 @@ class MCServerLogger(MCLogger):
             name = 'r.%s.maplog' % self._chunk_key
             path = os.path.join(self.map_chunk_path, name)
             fp = file(path, 'ab')
-            fp.write(pack('>iiiiii', *self._chunk_info))
+            fp.write(self._chunk_info)
             fp.write(pack('>i', len(self._chunk_data)))
             fp.write(self._chunk_data)
             fp.close()
@@ -679,101 +675,6 @@ class MCClientLogger(MCLogger):
         self._t = t + self.INTERVAL
         self._p = p
         self._write(' *** (%d, %d, %d)' % p)
-        return
-
-
-##  Proxy
-##
-class Proxy(asyncore.dispatcher):
-
-    local2remotefp = None
-    remote2localfp = None
-
-    def __init__(self, sock, session,
-                 plocal2remote, premote2local):
-        self.plocal2remote = plocal2remote
-        self.premote2local = premote2local
-        self.session = session
-        self.sendbuffer = ""
-        self.client = None
-        self.disp("BEGIN")
-        asyncore.dispatcher.__init__(self, sock)
-        return
-
-    # overridable methods
-    def local2remote(self, s):
-        for proc in self.plocal2remote:
-            proc.feed(s)
-        return s
-    def remote2local(self, s):
-        for proc in self.premote2local:
-            proc.feed(s)
-        return s
-
-    def connect_remote(self, addr):
-        assert not self.client, "already connected"
-        self.addr = addr
-        self.disp("(connecting to %s:%d)" % self.addr)
-        self.client = Client(self)
-        self.client.connect(addr)
-        return
-
-    def disconnect_remote(self):
-        assert self.client, "not connected"
-        self.client.close()
-        self.client = None
-        return
-
-    def disp(self, s):
-        print >>sys.stderr, "SESSION %s:" % self.session, s
-        return
-
-    def remote_connected(self):
-        self.disp("(connected to remote %s:%d)" % self.addr)
-        return
-
-    def remote_closed(self):
-        self.disp("(closed by remote %s:%d)" % self.addr)
-        self.client = None
-        if not self.sendbuffer:
-            self.handle_close()
-        return
-
-    def remote_read(self, data):
-        if data:
-            if self.remote2localfp is not None:
-                self.remote2localfp.write(data)
-            data = self.remote2local(data)
-            if data:
-                self.sendbuffer += data
-        return
-
-    def handle_read(self):
-        data = self.recv(8192)
-        if data:
-            data = self.local2remote(data)
-            if self.local2remotefp is not None:
-                self.local2remotefp.write(data)
-            if data and self.client is not None:
-                self.client.remote_write(data)
-        return
-
-    def writable(self):
-        return 0 < len(self.sendbuffer)
-
-    def handle_write(self):
-        n = self.send(self.sendbuffer)
-        self.sendbuffer = self.sendbuffer[n:]
-        if not self.sendbuffer and self.client is None:
-            self.handle_close()
-        return
-
-    def handle_close(self):
-        if self.client is not None:
-            self.disp("(closed by local)")
-            self.disconnect_remote()
-        self.close()
-        self.disp("END")
         return
 
 
@@ -814,6 +715,107 @@ class Client(asyncore.dispatcher):
         return
 
 
+##  Proxy
+##
+class Proxy(asyncore.dispatcher):
+
+    local2remotefp = None
+    remote2localfp = None
+
+    def __init__(self, sock, session,
+                 plocal2remote, premote2local):
+        self.plocal2remote = plocal2remote
+        self.premote2local = premote2local
+        self.session = session
+        self._sendbuffer = ''
+        self._sent_local2remote = 0
+        self._sent_remote2local = 0
+        self._client = None
+        self.disp("BEGIN")
+        asyncore.dispatcher.__init__(self, sock)
+        return
+
+    # overridable methods
+    def local2remote(self, s):
+        for proc in self.plocal2remote:
+            proc.feed(s)
+        return s
+    def remote2local(self, s):
+        for proc in self.premote2local:
+            proc.feed(s)
+        return s
+
+    def connect_remote(self, addr):
+        assert not self._client, "already connected"
+        self.addr = addr
+        self.disp("(connecting to %s:%d)" % self.addr)
+        self._client = Client(self)
+        self._client.connect(addr)
+        return
+
+    def disconnect_remote(self):
+        assert self._client, "not connected"
+        self._client.close()
+        self._client = None
+        return
+
+    def disp(self, s):
+        print >>sys.stderr, "SESSION %s:" % self.session, s
+        return
+
+    def remote_connected(self):
+        self.disp("(connected to remote %s:%d)" % self.addr)
+        return
+
+    def remote_closed(self):
+        self.disp("(closed by remote %s:%d)" % self.addr)
+        self._client = None
+        if not self._sendbuffer:
+            self.handle_close()
+        return
+
+    def remote_read(self, data):
+        if data:
+            if self.remote2localfp is not None:
+                self.remote2localfp.write(data)
+            self._sent_remote2local += len(data)
+            data = self.remote2local(data)
+            if data:
+                self._sendbuffer += data
+        return
+
+    def handle_read(self):
+        data = self.recv(8192)
+        if data:
+            data = self.local2remote(data)
+            self._sent_local2remote += len(data)
+            if self.local2remotefp is not None:
+                self.local2remotefp.write(data)
+            if data and self._client is not None:
+                self._client.remote_write(data)
+        return
+
+    def writable(self):
+        return 0 < len(self._sendbuffer)
+
+    def handle_write(self):
+        n = self.send(self._sendbuffer)
+        self._sendbuffer = self._sendbuffer[n:]
+        if not self._sendbuffer and self._client is None:
+            self.handle_close()
+        return
+
+    def handle_close(self):
+        if self._client is not None:
+            self.disp("(closed by local)")
+            self.disconnect_remote()
+        self.close()
+        self.disp('sent: local2remote: %r, remote2local: %r' %
+                  (self._sent_local2remote, self._sent_remote2local))
+        self.disp("END")
+        return
+
+
 ##  Server
 ##
 class Server(asyncore.dispatcher):
@@ -850,7 +852,7 @@ class MCProxyServer(Server):
                  safemode=True,
                  chat_text=True, time_update=True,
                  player_pos=True, player_health=True,
-                 map_chunk_path=None, map_seed=None, map_dimension=None):
+                 map_chunk_path=None, map_dimension=None):
         Server.__init__(self, port, destaddr, bindaddr=bindaddr)
         self.output = output
         self.safemode = safemode
@@ -859,7 +861,6 @@ class MCProxyServer(Server):
         self.player_pos = player_pos
         self.player_health = player_health
         self.map_chunk_path = map_chunk_path
-        self.map_seed = map_seed
         self.map_dimension = map_dimension
         return
 
@@ -873,7 +874,6 @@ class MCProxyServer(Server):
                                       player_pos=self.player_pos,
                                       player_health=self.player_health,
                                       map_chunk_path=self.map_chunk_path,
-                                      map_seed=self.map_seed,
                                       map_dimension=self.map_dimension)
         clientlogger = MCClientLogger(fp, safemode=self.safemode,
                                       chat_text=self.chat_text,
@@ -898,7 +898,6 @@ def main(argv):
     testfile = None
     safemode = True
     map_chunk_path = None
-    map_seed = None
     map_dimension = None
     for (k, v) in opts:
         if k == '-d': debug += 1
@@ -908,7 +907,6 @@ def main(argv):
         elif k == '-t': testfile = file(v, 'rb')
         elif k == '-U': safemode = False
         elif k == '-M': map_chunk_path = v
-        elif k == '-S': map_seed = long(v)
         elif k == '-D': map_dimension = int(v)
     if testfile is not None:
         MCParser.debugfp = sys.stderr
@@ -940,7 +938,7 @@ def main(argv):
     MCProxyServer(listen, (hostname, port), output, 
                   bindaddr=bindaddr, safemode=safemode,
                   map_chunk_path=map_chunk_path,
-                  map_seed=map_seed, map_dimension=map_dimension)
+                  map_dimension=map_dimension)
     asyncore.loop()
     return
 
