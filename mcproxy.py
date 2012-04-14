@@ -683,6 +683,8 @@ class MCClientLogger(MCLogger):
 ##
 class Client(asyncore.dispatcher):
 
+    BUFSIZE = 4906
+
     def __init__(self, proxy):
         self.proxy = proxy
         self.sendbuffer = ""
@@ -700,7 +702,7 @@ class Client(asyncore.dispatcher):
         return
 
     def handle_read(self):
-        self.proxy.remote_read(self.recv(8192))
+        self.proxy.remote_read(self.recv(self.BUFSIZE))
         return
 
     def remote_write(self, data):
@@ -722,6 +724,7 @@ class Proxy(asyncore.dispatcher):
 
     local2remotefp = None
     remote2localfp = None
+    BUFSIZE = 4096
 
     def __init__(self, sock, session,
                  plocal2remote, premote2local, delay=0):
@@ -791,7 +794,7 @@ class Proxy(asyncore.dispatcher):
         return
 
     def handle_read(self):
-        data = self.recv(8192)
+        data = self.recv(self.BUFSIZE)
         if data:
             data = self.local2remote(data)
             self._sent_local2remote += len(data)
