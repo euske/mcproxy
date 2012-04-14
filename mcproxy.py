@@ -130,7 +130,7 @@ class MCParser(object):
         return
 
     def _map_chunk(self, (x,z,g,b1,b2), nbytes):
-        #print 'map', (x,y,z), (sx,sy,sz), nbytes
+        #print 'map', (x,y,g,b1,b2), nbytes
         self._push(self._bytes, nbytes)
         return
         
@@ -621,6 +621,7 @@ class MCServerLogger(MCLogger):
         return
 
     def _map_chunk(self, (x,z,g,b1,b2), nbytes):
+        #self._write(' ... chunk (%d,%d), g=%d, b1=0x%x, b2=0x%x' % (x,z,g,b1,b2))
         self._chunk_key = '%d.%d' % (x>>9, z>>9)
         self._chunk_info = pack('>iibHH', x,z,g,b1,b2)
         self._chunk_data = ''
@@ -723,10 +724,11 @@ class Proxy(asyncore.dispatcher):
     remote2localfp = None
 
     def __init__(self, sock, session,
-                 plocal2remote, premote2local):
+                 plocal2remote, premote2local, delay=0):
         self.plocal2remote = plocal2remote
         self.premote2local = premote2local
         self.session = session
+        self.delay = delay
         self._sendbuffer = ''
         self._sent_local2remote = 0
         self._sent_remote2local = 0
@@ -739,10 +741,14 @@ class Proxy(asyncore.dispatcher):
     def local2remote(self, s):
         for proc in self.plocal2remote:
             proc.feed(s)
+        if self.delay:
+            time.sleep(self.delay*.001)
         return s
     def remote2local(self, s):
         for proc in self.premote2local:
             proc.feed(s)
+        if self.delay:
+            time.sleep(self.delay*.001)
         return s
 
     def connect_remote(self, addr):
@@ -820,9 +826,10 @@ class Proxy(asyncore.dispatcher):
 ##
 class Server(asyncore.dispatcher):
 
-    def __init__(self, port, destaddr, bindaddr="127.0.0.1"):
+    def __init__(self, port, destaddr, bindaddr="127.0.0.1", delay=0):
         asyncore.dispatcher.__init__(self)
         self.destaddr = destaddr
+        self.delay = delay
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
         self.set_reuse_addr()
         self.bind((bindaddr, port))
@@ -835,7 +842,7 @@ class Server(asyncore.dispatcher):
         (conn, (addr,port)) = self.accept()
         print >>sys.stderr, "Accepted:", addr
         (clientloggers, serverloggers) = self.create_proxy(conn, self.session)
-        proxy = Proxy(conn, self.session, clientloggers, serverloggers)
+        proxy = Proxy(conn, self.session, clientloggers, serverloggers, delay=self.delay)
         proxy.connect_remote(self.destaddr)
         self.session += 1
         return
@@ -848,12 +855,12 @@ class Server(asyncore.dispatcher):
 ##
 class MCProxyServer(Server):
     
-    def __init__(self, port, destaddr, output, bindaddr="127.0.0.1",
+    def __init__(self, port, destaddr, output, bindaddr="127.0.0.1", delay=0,
                  safemode=True,
                  chat_text=True, time_update=True,
                  player_pos=True, player_health=True,
                  map_chunk_path=None, map_dimension=None):
-        Server.__init__(self, port, destaddr, bindaddr=bindaddr)
+        Server.__init__(self, port, destaddr, bindaddr=bindaddr, delay=delay)
         self.output = output
         self.safemode = safemode
         self.chat_text = chat_text
@@ -885,10 +892,10 @@ class MCProxyServer(Server):
 def main(argv):
     import getopt
     def usage():
-        print 'usage: %s [-d] [-o output] [-p port] [-t testfile] [-U] [-M path] hostname:port' % argv[0]
+        print 'usage: %s [-d] [-o output] [-p port] [-t testfile] [-U] [-M path] [-L delay] hostname:port' % argv[0]
         return 100
     try:
-        (opts, args) = getopt.getopt(argv[1:], 'do:b:p:t:UM:S:D:')
+        (opts, args) = getopt.getopt(argv[1:], 'do:b:p:t:UM:S:D:L:')
     except getopt.GetoptError:
         return usage()
     debug = 0
@@ -899,6 +906,7 @@ def main(argv):
     safemode = True
     map_chunk_path = None
     map_dimension = None
+    delay = 0
     for (k, v) in opts:
         if k == '-d': debug += 1
         elif k == '-o': output = v
@@ -908,6 +916,7 @@ def main(argv):
         elif k == '-U': safemode = False
         elif k == '-M': map_chunk_path = v
         elif k == '-D': map_dimension = int(v)
+        elif k == '-L': delay = int(v)
     if testfile is not None:
         MCParser.debugfp = sys.stderr
         parser = MCServerLogger(sys.stdout)
@@ -935,7 +944,7 @@ def main(argv):
         MCParser.debugfp = file('parser.log', 'w')
         Proxy.local2remotefp = file('client.log', 'wb')
         Proxy.remote2localfp = file('server.log', 'wb')
-    MCProxyServer(listen, (hostname, port), output, 
+    MCProxyServer(listen, (hostname, port), output, delay=delay,
                   bindaddr=bindaddr, safemode=safemode,
                   map_chunk_path=map_chunk_path,
                   map_dimension=map_dimension)
